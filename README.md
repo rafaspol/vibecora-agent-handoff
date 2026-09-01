@@ -53,7 +53,7 @@ vibecora-handoff check        # só encerrar com "consistente"
 
 `.agents/handoff.config.json` (criado por `init`) declara caminhos de arquivo,
 `git.mainRef`, as regras de classificação de caminhos e a plataforma de
-auditoria. Ver `references/adoption.md`.
+auditoria. Ver `docs/adoption.md`.
 
 ## Contrato
 
@@ -63,7 +63,18 @@ auditoria. Ver `references/adoption.md`.
 - deploy, rollback, smoke e sincronização de roadmap ficam no projeto
   consumidor, não aqui.
 
-Ver `references/schema.md` para o contrato completo.
+Ver `docs/schema.md` para o contrato completo.
+
+## Documentação
+
+Lida conforme a tarefa, não de entrada:
+
+| Arquivo | Para quê |
+|---|---|
+| [`docs/schema.md`](docs/schema.md) | contrato completo do handoff v3 — criar, revisar ou fechar um retrato |
+| [`docs/adoption.md`](docs/adoption.md) | adotar a CLI num projeto consumidor, testes de paridade, migração de scripts locais |
+| [`docs/diagnostics.md`](docs/diagnostics.md) | erros comuns do `check` e do `new`, e como resolver |
+| [`docs/quave-one.md`](docs/quave-one.md) | configuração e uso do adaptador Quave One no `audit` |
 
 ## Proteção de informação
 
