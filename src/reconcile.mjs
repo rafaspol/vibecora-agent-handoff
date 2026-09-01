@@ -26,7 +26,7 @@ function commitRow(field, source, snapshotSha, liveSha, ancestry) {
     const rel = ancestry(snapshotSha, liveSha);
     if (rel === 'trailing') {
       match = true;
-      note = 'live à frente do snapshot por commits não-runtime';
+      note = 'diferem só por commits não-runtime';
     }
   }
   const row = { field, source: source.name || field, snapshot: a, live: b, match };

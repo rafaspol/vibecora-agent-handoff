@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { makeAncestry } from '../ancestry.mjs';
 import { makeClassifier } from '../classify.mjs';
 import { makeGitFacts } from '../gitFacts.mjs';
 import { collectQuave } from '../quave/adapter.mjs';
@@ -105,26 +106,7 @@ export async function run(args, { cwd, config }) {
   const git = makeGitFacts({ cwd, mainRef });
   const classifier = makeClassifier(config);
 
-  // Tolera "commit-retrato à frente": snapshot é ancestral do live e o
-  // intervalo só tem commits de classe não-runtime.
-  const ancestry = (snapSha, liveSha) => {
-    if (!snapSha || !liveSha) return 'other';
-    const a = snapSha.slice(0, 12);
-    const b = liveSha.slice(0, 12);
-    if (a === b || snapSha.startsWith(liveSha) || liveSha.startsWith(snapSha)) {
-      return 'equal';
-    }
-    if (!git.isAncestor(snapSha, liveSha)) return 'other';
-    const commits = git.commitsInRange(snapSha, liveSha);
-    if (commits.length === 0) return 'other';
-    const allNonRuntime = commits.every((c) => {
-      const classes = classifier.classifyPaths(git.pathsInCommit(c), {
-        onUnknown: () => {},
-      });
-      return !classes.has('runtime');
-    });
-    return allNonRuntime ? 'trailing' : 'other';
-  };
+  const ancestry = makeAncestry(git, classifier);
 
   const remoteMain = git.remoteMainCommit();
   const [apiRelease] = await Promise.all([collectApiRelease(config)]);

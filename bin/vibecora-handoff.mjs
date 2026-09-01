@@ -46,9 +46,11 @@ async function main() {
   const [, , cmd, ...rest] = process.argv;
   const args = parseArgs(rest);
 
-  if (!cmd || args.help || !COMMANDS[cmd]) {
-    console.log(USAGE);
-    return cmd && !COMMANDS[cmd] ? 1 : 0;
+  const askedForHelp = !cmd || cmd === '-h' || cmd === '--help' || args.help;
+  const unknownCmd = cmd && !askedForHelp && !COMMANDS[cmd];
+  if (askedForHelp || unknownCmd) {
+    (unknownCmd ? console.error : console.log)(USAGE);
+    return unknownCmd ? 1 : 0;
   }
 
   const cwd = process.cwd();
