@@ -6,6 +6,15 @@
   "bin": {
     "vibecora-handoff": "./bin/vibecora-handoff.mjs"
   },
+  "exports": {
+    "./classify": "./src/classify.mjs",
+    "./config": "./src/config.mjs",
+    "./schema": "./src/schema.mjs",
+    "./gitFacts": "./src/gitFacts.mjs",
+    "./reconcile": "./src/reconcile.mjs",
+    "./forbiddenTerms": "./src/forbiddenTerms.mjs",
+    "./legacyV2": "./src/legacyV2.mjs"
+  },
   "engines": {
     "node": ">=20"
   },

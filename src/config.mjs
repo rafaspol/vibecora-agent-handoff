@@ -66,8 +66,10 @@ export const DEFAULT_CONFIG = {
     unknownClass: 'runtime',
   },
   audit: {
-    // Nome da env var que aponta a base de `/api/release`. Sem valor => a fonte
-    // é reportada como indisponível.
+    // Base de `/api/release`. Precedência: `releaseBaseUrl` literal na config,
+    // depois a env var nomeada em `releaseBaseUrlEnv`. Sem nenhum => a fonte é
+    // reportada como indisponível.
+    releaseBaseUrl: null,
     releaseBaseUrlEnv: 'HANDOFF_AUDIT_BASE_URL',
     quave: {
       envNameEnv: 'QUAVEONE_ENV_NAME',

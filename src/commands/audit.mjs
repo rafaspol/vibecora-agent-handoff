@@ -71,9 +71,12 @@ function collectGhActions(mainRef) {
 async function collectApiRelease(config) {
   const envName =
     config?.audit?.releaseBaseUrlEnv || 'HANDOFF_AUDIT_BASE_URL';
-  const base = process.env[envName];
+  const base = config?.audit?.releaseBaseUrl || process.env[envName];
   if (!base) {
-    return { available: false, reason: `${envName} ausente` };
+    return {
+      available: false,
+      reason: `sem base de /api/release (config.audit.releaseBaseUrl ou ${envName})`,
+    };
   }
   const url = `${base.replace(/\/$/, '')}/api/release`;
   try {

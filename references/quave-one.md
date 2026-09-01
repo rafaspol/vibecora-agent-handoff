@@ -11,6 +11,7 @@ Na config do consumidor:
 ```json
 "platform": "quave-one",
 "audit": {
+  "releaseBaseUrl": "https://app.example.com",
   "releaseBaseUrlEnv": "HANDOFF_AUDIT_BASE_URL",
   "quave": {
     "envNameEnv": "QUAVEONE_ENV_NAME",
@@ -19,6 +20,9 @@ Na config do consumidor:
   }
 }
 ```
+
+`releaseBaseUrl` (literal na config) tem precedência sobre a env var nomeada em
+`releaseBaseUrlEnv`. O `audit` faz `GET <base>/api/release`.
 
 ## Variáveis de ambiente no `audit`
 
