@@ -1,0 +1,32 @@
+{
+  "name": "vibecora-agent-handoff",
+  "version": "0.1.0-rc.1",
+  "description": "Contrato de handoff v3 entre agentes: schema, geracao por comando, verificacao offline e reconciliacao conectada.",
+  "type": "module",
+  "bin": {
+    "vibecora-handoff": "./bin/vibecora-handoff.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check:forbidden": "node scripts/check-forbidden.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "SKILL.md",
+    "references",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafaspol/vibecora-agent-handoff.git"
+  }
+}
