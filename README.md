@@ -82,6 +82,12 @@ Lida conforme a tarefa, não de entrada:
 `HANDOFF_FORBIDDEN_TERMS`, não versionada) em arquivos e no histórico Git. Roda
 antes de cada tag. A saída informa arquivo e linha, sem repetir o termo.
 
+A lista existe para proteger **produtos que ainda não foram lançados**: nome,
+domínio, identificadores de ambiente e exemplos reais. Termos entram quando um
+produto novo começa e saem quando ele vai ao ar. O nome desta ferramenta e o do
+projeto que a originou não são segredo e nunca entram na lista — é por isso que
+eles aparecem à vontade neste repositório.
+
 ## Licença
 
 MIT.
