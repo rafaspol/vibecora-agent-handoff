@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { makeClassifier } from '../classify.mjs';
+import { CHANGE_CLASSES, makeClassifier } from '../classify.mjs';
 import { makeGitFacts } from '../gitFacts.mjs';
 import { validateHandoff } from '../schema.mjs';
 import { dumpYaml, parseYaml } from '../yaml.mjs';
@@ -42,8 +42,15 @@ export function run(args, { cwd, config }) {
   const derived = classifier.classifyPaths([...changed, relHandoff], {
     onUnknown: () => {},
   });
+  // Classes extras que passos posteriores do fluxo do consumidor vão tocar
+  // (ex.: `roadmap-sync` reescreve o ROADMAP depois do `new`): via --extra-class
+  // ou config.classify.recordAlsoTouches.
+  const extra = [
+    ...(args.extraClass || []),
+    ...(config.classify?.recordAlsoTouches || []),
+  ].filter((c) => CHANGE_CLASSES.includes(c));
   const changeClass = [
-    ...new Set([...derived, ...(input.change_class || [])]),
+    ...new Set([...derived, ...(input.change_class || []), ...extra]),
   ].sort();
   if (changeClass.length === 0) changeClass.push(classifier.unknownClass);
 

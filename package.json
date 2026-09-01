@@ -1,6 +1,6 @@
 {
   "name": "vibecora-agent-handoff",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Contrato de handoff v3 entre agentes: schema, geracao por comando, verificacao offline e reconciliacao conectada.",
   "type": "module",
   "bin": {

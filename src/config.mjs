@@ -64,6 +64,9 @@ export const DEFAULT_CONFIG = {
       { class: 'general_docs', match: ['*.md'] },
     ],
     unknownClass: 'runtime',
+    // Classes que o fluxo de fechamento do consumidor toca DEPOIS do `new`
+    // (ex.: um `roadmap-sync` que reescreve o ROADMAP). Unidas ao change_class.
+    recordAlsoTouches: [],
   },
   audit: {
     // Base de `/api/release`. Precedência: `releaseBaseUrl` literal na config,

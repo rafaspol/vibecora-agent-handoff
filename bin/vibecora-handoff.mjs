@@ -16,6 +16,8 @@ const USAGE = `vibecora-handoff <comando> [opções]
 
   init       cria config + arquivo de entrada (não sobrescreve)
   new        regenera o retrato inteiro a partir do Git + entrada (offline)
+             --extra-class <c>   classe extra que passos posteriores do fluxo
+                                 (ex.: roadmap-sync) vão tocar; repetível
   brief      visão compacta do retrato (--json); não escreve, offline
   check      valida schema, Git, histórico e evidências (offline)
   finalize   acrescenta um único run_completed (idempotente, offline)
@@ -29,7 +31,7 @@ Opções gerais:
 `;
 
 function parseArgs(argv) {
-  const args = { _: [], json: false };
+  const args = { _: [], json: false, extraClass: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') args.json = true;
@@ -37,6 +39,7 @@ function parseArgs(argv) {
     else if (a === '--config') args.config = argv[++i];
     else if (a === '--result') args.result = argv[++i];
     else if (a === '--recorded-at') args.recordedAt = argv[++i];
+    else if (a === '--extra-class') args.extraClass.push(argv[++i]);
     else args._.push(a);
   }
   return args;

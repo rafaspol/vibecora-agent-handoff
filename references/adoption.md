@@ -40,6 +40,18 @@ No `package.json` do consumidor:
 O `handoff:record` que fazia tudo num passo vira `new` + `finalize`. Ajuste o
 `AGENTS.md` e qualquer git hook.
 
+Se o fluxo do consumidor tem um passo que reescreve um arquivo DEPOIS do `new`
+(um `roadmap-sync` que mexe no `ROADMAP.md`, por exemplo), o `new` não sabe
+disso e o `check` seguinte vai reclamar da classe não declarada. Declare essa
+classe com `--extra-class <classe>` no `new`, ou em
+`classify.recordAlsoTouches` na config:
+
+```json
+"scripts": {
+  "handoff:record": "vibecora-handoff new --extra-class product_docs && vibecora-handoff finalize && npm run roadmap-sync"
+}
+```
+
 ## Fica local (não migra)
 
 - sincronização de ROADMAP e o formato de qualquer bloco gerado;
