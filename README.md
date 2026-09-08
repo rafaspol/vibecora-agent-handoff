@@ -4,243 +4,200 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-informational)
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-blue)
 
-Um contrato de passagem de bastão entre agentes de código — e uma camada que
-**mede o estado do repositório antes de a sessão começar**, em vez de acreditar
-no que a sessão anterior escreveu.
+**O que faz:** mede o estado real do repositório **antes** de a sessão de um
+agente começar, e gera no fim um retrato verificável do que ela entregou. Um
+contrato só de passagem de bastão entre agentes de código — Claude Code, Codex,
+Cursor, ou você.
 
----
+CLI em Node, sem build, sem framework de teste, uma dependência de runtime.
 
-## Por que isto existe
+## O problema
 
-Vou ser direto: isto foi construído por um vibecoder que queria manter a
-consistência do vibedesenvolvimento entre agentes diferentes. Não saiu de uma
-pesquisa sobre orquestração multiagente. Saiu de cansaço.
+Passar contexto entre sessões de agentes por um resumo escrito à mão falha de
+três formas, todas observadas em produção:
 
-O problema é conhecido de quem trabalha assim. Você fecha a sessão com um
-agente. Amanhã abre com outro — ou com o mesmo, sem memória. Ele precisa saber
-o que já foi feito, o que está no ar, o que ficou decidido e o que **não** deve
-ser "consertado". A saída natural é pedir ao agente que escreva um resumo no
-fim, e ao próximo que leia esse resumo no começo.
+| Falha | Por quê |
+|---|---|
+| O resumo correto engana | Ele é imutável e correto sobre o instante em que foi gravado. Lido como estado atual, esconde tudo o que aconteceu depois — commits, branches, PRs. |
+| O fechamento tem verificação, a abertura não | O CI reprova um resumo inconsistente; começar a sessão é uma frase de boa vontade num arquivo de instruções. |
+| Decisões somem na troca do arquivo | "Este comportamento é intencional", "esta peça parece morta e não está" — moram na lista de pendências e vão junto no próximo merge. |
 
-Funciona por um tempo. Depois começa a falhar de um jeito específico e chato:
-**o resumo continua correto, e mesmo assim engana.**
+Nenhuma se resolve pedindo ao agente que escreva melhor. As três são
+verificáveis por medição.
 
-## Três coisas que aconteceram de verdade
+## Como resolve
 
-**1. O fim da sessão tinha trava; o começo era só um pedido.**
-Havia uma verificação automática que reprovava um resumo inconsistente no
-fechamento. Para abrir, existia uma frase num arquivo de instruções pedindo
-para ler o resumo antes de começar. Uma verificação de um lado, boa vontade do
-outro. Adivinhe qual lado quebrou.
+**Precedência de fontes**, da mais forte para a mais fraca:
 
-**2. Um resumo correto foi lido como se fosse o estado atual.**
-Numa retomada, o resumo dizia "não há fila". Estava correto — era um registro
-imutável, e correto sobre o instante em que foi gravado. Ao lado esperavam
-**vinte commits numa branch e uma PR aberta**, todos posteriores. A sessão
-seguinte quase começou por cima da linha principal. Nenhuma verificação pegaria:
-o resumo não estava errado; a **fonte** é que estava. Foi a terceira vez que o
-mesmo padrão apareceu.
+```
+medição ao vivo  >  travas versionadas  >  retrato  >  telemetria
+```
 
-**3. Sete decisões caras quase sumiram num merge.**
-Coisas do tipo "este contraste invertido é intencional, foi medido", "este
-componente parece morto e não está". Moravam na lista de pendências do resumo,
-misturadas com tarefas de verdade. Um merge trocou o arquivo inteiro e levou
-junto o que não era tarefa — decisões que custaram sessões para chegar ali.
+O retrato é **intenção**; a medição é **estado**. Onde discordarem, vale a
+medição.
 
-Nenhum desses três é resolvido pedindo ao agente que escreva melhor.
+- **Abertura** (`start`) — mede o remoto, a ancestralidade do commit do retrato,
+  as travas e o estado publicado; dá um veredito; **depois** imprime o retrato.
+- **Fechamento** (`new` → `finalize` → `check`) — você escreve a narrativa numa
+  entrada; o retrato é **gerado** derivando do Git o que é derivável; um evento
+  append-only registra o run; a verificação é offline e determinística.
 
-## Como funciona, em 30 segundos
+O retrato nunca é editado à mão.
 
-A ideia toda cabe numa frase:
-
-> **O retrato é intenção. A medição é estado. Onde os dois discordarem, vale a
-> medição.**
-
-O ciclo tem dois momentos.
-
-**Ao abrir** (`start`) — o comando **mede** antes de você acreditar em qualquer
-coisa: o que existe no remoto e não está no seu clone, se o commit do retrato
-ainda está na linha publicada, se alguma trava sumiu do arquivo sem ser
-aposentada, o que está no ar. Dá um veredito. **Só então** imprime o retrato da
-sessão anterior — por último, de propósito, porque é a fonte mais fraca.
-
-**Ao fechar** (`new` → `finalize` → `check`) — você escreve a narrativa num
-arquivo de entrada; o comando gera o retrato derivando do Git o que é derivável
-(commit, branch, estado do código, classes de arquivo tocadas), grava um evento
-append-only, e verifica offline se tudo é coerente.
-
-O retrato nunca é editado à mão. Ele é gerado, e o que você escreve é a entrada.
-
-### Os detectores da abertura
-
-Cinco. **Três bloqueiam**, dois só informam:
-
-| Detector | Bloqueia | Quando |
-|---|---|---|
-| `queue_hidden` | **sim** | há PR aberta, ou branch no remoto que seu clone nunca viu |
-| `snapshot_stale` | **sim** | o commit do retrato divergiu da linha publicada |
-| `constraint_dropped` | **sim** | uma trava sumiu do arquivo sem ir para `retired` |
-| `production_unverified` | não | o estado publicado não foi consultado |
-| `remote_ahead` | não | o remoto está à frente do seu clone |
-
-Os dois de baixo não bloqueiam por escolha. O remoto estar à frente é o estado
-normal de quem ainda não deu `pull` — **alarme que grita sempre é alarme
-desligado**, e aí você perde o caso que importa.
-
-E existe uma regra de desligamento que faz parte do desenho: **se um bloqueio
-atrapalhar duas vezes seguidas sem ter razão, desligue-o e deixe só o
-relatório** — não "ajuste o limiar". Um detector que vira ritual de contorno já
-não está medindo nada.
-
-## Começando
-
-Precisa de **Node ≥ 20** e **Git**. O `gh` é opcional: sem ele, PRs abertas não
-são lidas, e a saída diz isso em vez de fingir que olhou.
+## Instalação
 
 ```bash
 npm i -D github:rafaspol/vibecora-agent-handoff#v0.3.0
 ```
 
-Distribuído por tag do GitHub, sem npm. Confira a tag mais recente em
-[releases](https://github.com/rafaspol/vibecora-agent-handoff/releases).
+Node ≥ 20 e Git. `gh` é opcional — sem ele, PRs abertas não são lidas e a saída
+diz isso. Distribuição por tag do GitHub, sem npm; atualizar é trocar a tag.
+
+## Uso
 
 ```bash
-npx vibecora-handoff init
-```
-
-Cria três arquivos em `.agents/`: a configuração, o modelo de entrada e o
-arquivo de travas.
-
-```bash
+npx vibecora-handoff init             # config + entrada + travas
 git add .agents && git commit -m "adota o handoff"
+
+npx vibecora-handoff start            # abre a sessão: mede, dá veredito, mostra o retrato
+# ... trabalho; edite .agents/handoff.input.yaml ...
+npx vibecora-handoff new              # gera o retrato
+npx vibecora-handoff finalize         # grava o run_completed
+npx vibecora-handoff check            # verifica; sai 1 se inconsistente
 ```
 
-**Este passo importa.** O detector de travas compara o arquivo com os ids que já
-existiram *no histórico Git dele*. Enquanto ele não estiver commitado, não há
-com o que comparar e o detector fica inerte — sem avisar.
-
-Agora abra a sessão:
-
-```bash
-npx vibecora-handoff start
-```
+Saída do `start`:
 
 ```
 ── medido ──
-  clone        ad1d7eb (main)
-  retrato      ainda não existe
-  publicado    —
-  remoto       não consultado
-  travas       nenhuma
+  clone        f1f6408 (main)
+  retrato      2f29d5c — contained em relação ao publicado
+  publicado    2f29d5c
+  remoto       lido — 0 branch(es) ausente(s), 0 PR(s) aberta(s)
+  travas       7
 
 LIVRE — o estado medido não contradiz o retrato.
-  (aviso) ainda não há retrato neste projeto — rode `vibecora-handoff new` para gravar o primeiro.
-
-Ainda não há retrato. Ao fechar a sessão, `new` + `finalize` gravam o
-primeiro, e a partir daí ele aparece aqui embaixo.
 ```
 
-Ao terminar, escreva a narrativa em `.agents/handoff.input.yaml` e feche:
+**Commitar o `constraints.yaml` não é opcional.** O detector de travas compara o
+arquivo com os ids que já existiram no histórico Git dele; sem commit, não há
+com o que comparar e ele fica inerte.
 
-```bash
-npx vibecora-handoff new       # gera o retrato a partir do Git + entrada
-npx vibecora-handoff finalize  # grava o evento append-only
-npx vibecora-handoff check     # verifica; sai 1 se algo não bate
-```
+## Comandos
 
-Na próxima abertura, o `start` mostra o que mediu **e** o retrato — nessa ordem.
-
-## Os sete comandos
-
-| Comando | O que faz | Rede | Escreve | Sai 1 quando |
+| Comando | Faz | Rede | Escreve | Sai 1 |
 |---|---|---|---|---|
-| `init` | cria config, entrada e travas (não sobrescreve) | não | sim | — |
-| `start` | mede o estado da abertura, dá o veredito, chama o `brief` | sim¹ | **não** | bloqueado |
-| `new` | regenera o retrato inteiro do Git + entrada | não | sim | entrada inconsistente |
-| `brief` | visão compacta do retrato | não | não | retrato ilegível |
-| `finalize` | acrescenta um `run_completed` (idempotente) | não | sim | retrato inválido |
-| `check` | valida schema, Git, histórico e cruzamentos | não | não | inconsistente |
-| `audit` | reconcilia com GitHub, release e plataforma | sim | não | — ² |
+| `init` | cria config, entrada e travas; não sobrescreve | — | sim | — |
+| `start` | mede a abertura, dá veredito, chama o `brief` | leitura | — | bloqueado |
+| `new` | regenera o retrato do Git + entrada | — | sim | entrada inconsistente |
+| `brief` | visão compacta do retrato | — | — | retrato ilegível |
+| `finalize` | acrescenta um `run_completed` (idempotente) | — | sim | retrato inválido |
+| `check` | valida schema, Git, histórico e cruzamentos | — | — | inconsistente |
+| `audit` | reconcilia com GitHub, release e plataforma | leitura | — | — ¹ |
 
-¹ Só leitura, e tudo com teto de tempo. Sem rede, degrada e diz o que não mediu.
-² `audit` é relatório, não trava: sai 0 mesmo apontando divergência.
+¹ `audit` é relatório, não gate: sai 0 mesmo apontando divergência.
 
-## O que você ganha
+Flags: `--json` (`start`, `brief`, `check`, `finalize`), `--config <path>`,
+`--result <r>`, `--recorded-at <iso>`, `--extra-class <c>`.
+Saída 2 é reservada para "não deu para rodar" (config ilegível, arquivo
+corrompido).
 
-Sendo honesto sobre o que é garantia e o que é expectativa:
+## Detectores da abertura
 
-- **Uma sessão que abre sabendo o que existe fora do seu clone.** Isso é
-  medição, não promessa: ou a branch está lá, ou não está.
-- **Um retrato que não consegue mentir sobre o commit.** O `check` cruza o que
-  foi escrito com o que o Git diz.
-- **Travas que não somem numa troca de arquivo.** Remover exige um ato
-  explícito, e o apagamento silencioso vira bloqueio na próxima abertura.
-- **Um formato só** — que qualquer agente lê, e você também.
+| Detector | Bloqueia | Dispara quando |
+|---|---|---|
+| `queue_hidden` | **sim** | há PR aberta, ou branch no remoto ausente do clone |
+| `snapshot_stale` | **sim** | o commit do retrato divergiu da linha publicada |
+| `constraint_dropped` | **sim** | uma trava sumiu do arquivo sem ir para `retired` |
+| `production_unverified` | não | o estado publicado não foi consultado |
+| `remote_ahead` | não | o remoto está à frente do clone |
 
-O que **não** é garantido: que o agente escreva um bom retrato. Nada aqui
-inspeciona a qualidade da narrativa. O mecanismo protege o que é *verificável* —
-commits, branches, ids, ancestralidade — e deixa a prosa por sua conta. Foi
-escolha: tudo que só funcionaria se alguém policiasse o preenchimento de campo
-ficou de fora, porque isso não se sustenta.
+Três decisões de desenho, cada uma com teste simétrico e mutação:
 
-**O custo:** um comando ao abrir, três ao fechar, e dois arquivos versionados a
-mais. Se isso já parece muito para o seu projeto, provavelmente é — e tudo bem.
+- **`remote_ahead` não bloqueia.** Remoto à frente é o estado normal de quem não
+  deu `pull`; um alarme que dispara sempre é contornado por reflexo.
+- **Ancestralidade é bidirecional.** Retrato *à frente* do publicado é trabalho
+  local não pushado, não divergência. Só `diverged` bloqueia; `null` (não medido)
+  também não.
+- **Retrato ausente informa; retrato sem commit bloqueia.** Projeto recém-adotado
+  não é retrato quebrado.
 
-## Limites honestos
+**Regra de desligamento:** se um bloqueio atrapalhar duas vezes sem razão,
+desligue-o e deixe só o relatório — não recalibre. Detector que vira ritual de
+contorno não mede nada.
 
-- **Um handoff não autoriza nada.** Não é permissão para deploy, publicação ou
-  qualquer ação externa. Deploy, rollback e smoke ficam no seu projeto.
-- **Seis comandos rodam em qualquer projeto. O `audit` não.** Ele assume a
-  plataforma Quave One e um `GET /api/release`, que vêm do projeto onde isto
-  nasceu. Em outra plataforma ele vai reportar a fonte como indisponível para
-  sempre, e adaptá-lo significa trocar `src/quave/adapter.mjs`. Não há mecanismo
-  de plugin. É a parte menos reaproveitável, e preferi dizer a fingir.
-- **Sem npm.** Instalação por tag do GitHub; atualizar é mudar a tag de
-  propósito.
-- **Tudo em português** — documentação, mensagens de erro, modelos.
-- **Sem promessa de suporte.** É uma ferramenta que uso todo dia, publicada
-  porque pode servir a outra pessoa. Issues são bem-vindas; SLA não existe.
+## Travas (`constraints.yaml`)
+
+Decisões que não pertencem a nenhum retrato. Versionadas, fora do ciclo.
+
+```yaml
+version: 1
+constraints:
+  - id: polaridade-invertida        # kebab-case, único
+    resumo: >                       # o que é
+      O contraste invertido nesta tela é intencional.
+    porque: >                       # por que não é bug
+      Medido contra as referências e escolhido assim mesmo.
+    fonte: "ADR 0007"               # onde verificar
+retired: []                         # { id, motivo, em } — remover exige passar por aqui
+```
+
+Acrescentar é livre. Remover sem aposentar bloqueia a próxima abertura.
+Tarefa não entra aqui: tarefa vive no `remaining` do retrato e morre quando é
+feita.
 
 ## Configuração
 
-O `init` escreve defaults genéricos em `.agents/handoff.config.json`. O que a
-maioria dos projetos ajusta é a classificação de caminhos — quais arquivos são
-runtime, quais são processo, quais são estado:
+`.agents/handoff.config.json`, mesclada em profundidade sobre os defaults —
+**listas substituem**:
 
 ```jsonc
 {
-  "git": { "mainRef": "main" },
-  "files": { "constraints": ".agents/constraints.yaml" },
+  "git":   { "mainRef": "main" },
+  "files": { "handoff": ".agents/handoff.yaml", "constraints": ".agents/constraints.yaml" },
   "classify": {
     "rules": [{ "class": "runtime", "match": ["app/**", "package.json"] }],
     "unknownClass": "runtime"
-  }
+  },
+  "audit": { "releaseBaseUrl": null, "releaseBaseUrlEnv": "HANDOFF_AUDIT_BASE_URL" }
 }
 ```
 
-Detalhes e o roteiro completo em [`docs/adoption.md`](docs/adoption.md).
+- `classify.rules` é ordenada: a primeira que casar decide. É o que mais varia
+  entre projetos.
+- Mudou `files.*`? Mude `classify.rules` junto — senão os arquivos do handoff
+  caem em `unknownClass` e o `check` reclama.
+- `files.friction`, `files.roadmap` e `platform` são **declarativos**: nenhum
+  comando os lê.
+
+Roteiro completo em [`docs/adoption.md`](docs/adoption.md).
+
+## Limites
+
+- **Um handoff não autoriza nada.** Não é permissão para deploy, publicação ou
+  ação externa. Deploy, rollback, smoke e gates de CI ficam no seu projeto.
+- **Seis comandos rodam em qualquer projeto; o `audit` não.** Ele assume a
+  plataforma Quave One e um `GET /api/release`. Em outra plataforma reporta a
+  fonte como indisponível para sempre, e adaptar significa trocar
+  `src/quave/adapter.mjs` — não há mecanismo de plugin.
+- **Nada verifica a qualidade da narrativa.** O mecanismo protege o que é
+  verificável — commits, branches, ids, ancestralidade. A prosa é sua.
+- Sem npm, tudo em português, sem promessa de suporte.
 
 ## Proteção de informação
 
-Há um verificador de termos proibidos (`npm run check:forbidden`) que varre
-arquivos **e histórico de commits**. Ele serve a quem **extrai** uma ferramenta
-de um projeto privado — não a quem adota esta aqui.
-
-A lista vem da variável `HANDOFF_FORBIDDEN_TERMS` e **não é versionada**. Ela
-existe para proteger produtos que ainda não foram lançados: nome, domínio,
-identificadores de ambiente, exemplos reais. Termos entram quando um produto
-começa e saem quando ele vai ao ar. O nome desta ferramenta e o do projeto que a
-originou não são segredo e nunca entram na lista — por isso aparecem à vontade
-aqui.
+`npm run check:forbidden` varre arquivos **e histórico de commits** contra a
+lista em `HANDOFF_FORBIDDEN_TERMS` (não versionada). Serve a quem **extrai** uma
+ferramenta de um projeto privado — nome, domínio, identificadores de ambiente de
+produtos ainda não lançados. Sem a variável definida, ele não protege nada e diz
+isso.
 
 ## Documentação
 
-Lida conforme a tarefa, não de entrada:
-
 | Arquivo | Para quê |
 |---|---|
-| [`docs/schema.md`](docs/schema.md) | o contrato completo do retrato — criar, revisar ou fechar um |
-| [`docs/adoption.md`](docs/adoption.md) | adotar num projeto novo ou migrar de scripts próprios |
+| [`docs/schema.md`](docs/schema.md) | contrato completo do retrato (`version: 3`) |
+| [`docs/adoption.md`](docs/adoption.md) | adotar num projeto ou migrar de scripts próprios |
 | [`docs/diagnostics.md`](docs/diagnostics.md) | um comando reprovou e você quer saber por quê |
 | [`docs/quave-one.md`](docs/quave-one.md) | o adaptador de plataforma do `audit` |
 | [`CHANGELOG.md`](CHANGELOG.md) | o que mudou entre as tags |
@@ -251,14 +208,14 @@ Lida conforme a tarefa, não de entrada:
 npm test
 ```
 
-86 testes, `node --test` puro, sem framework. Uma dependência de runtime
-(`js-yaml`) e **zero** de desenvolvimento. Os testes de comando rodam a CLI de
-verdade contra repositórios Git temporários — inclusive um remoto local, para
-exercer os casos de branch ausente e de histórico divergente sem tocar a rede.
+86 testes, `node --test` puro, zero devDependencies. Os testes de comando rodam a
+CLI de verdade contra repositórios Git temporários, com remoto bare local — os
+casos de branch ausente e histórico divergente são exercidos sem tocar a rede.
 
 ## Licença
 
-[MIT](LICENSE).
+[MIT](LICENSE). Construído por um vibecoder para manter consistência entre
+agentes diferentes; publicado porque pode servir a mais alguém.
 
 ---
 
