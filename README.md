@@ -199,6 +199,8 @@ isso.
 | [`docs/schema.md`](docs/schema.md) | contrato completo do retrato (`version: 3`) |
 | [`docs/adoption.md`](docs/adoption.md) | adotar num projeto ou migrar de scripts próprios |
 | [`docs/diagnostics.md`](docs/diagnostics.md) | um comando reprovou e você quer saber por quê |
+| [`docs/context.md`](docs/context.md) | enxugar o `AGENTS.md` do seu projeto, e a evidência disso |
+| [`docs/AGENTS.example.md`](docs/AGENTS.example.md) | um modelo de `AGENTS.md` para copiar |
 | [`docs/quave-one.md`](docs/quave-one.md) | o adaptador de plataforma do `audit` |
 | [`CHANGELOG.md`](CHANGELOG.md) | o que mudou entre as tags |
 

@@ -131,6 +131,26 @@ retired:
 
 Apagar sem aposentar bloqueia a próxima abertura. É o ponto.
 
+## O arquivo de contexto do projeto
+
+O handoff cobre a abertura e o fechamento da sessão. O que o agente precisa
+saber *durante* ela continua no arquivo de contexto do seu projeto —
+`AGENTS.md`, `CLAUDE.md`, o equivalente do seu agente. Este pacote não escreve
+nem edita esse arquivo: ele é seu.
+
+O que muda ao adotar o handoff é **quanto** esse arquivo precisa carregar. O
+estado do projeto sai dele (passa a ser medido pelo `start`), e as decisões que
+não podem sumir saem também (vão para o `constraints.yaml`). Sobra a regra que
+não se deduz de lugar nenhum — que é bem menos do que costuma estar ali.
+
+- [`docs/context.md`](context.md) — por que enxugar, com a evidência que
+  sustenta a decisão, e como cortar sem perder guardrail.
+- [`docs/AGENTS.example.md`](AGENTS.example.md) — um modelo para copiar e
+  adaptar.
+
+Nada disso é obrigatório para usar a CLI. Os sete comandos funcionam igual com
+um arquivo de contexto de mil linhas.
+
 ## Fica no seu projeto (não vem no núcleo)
 
 - sincronização de ROADMAP e o formato de qualquer bloco gerado;

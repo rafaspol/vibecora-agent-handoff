@@ -11,6 +11,20 @@ acontece sozinho.
 npm i -D github:rafaspol/vibecora-agent-handoff#v0.3.0
 ```
 
+## [0.3.2] — 2026-09-08
+
+### Adicionado
+
+- `docs/context.md` — como escrever o arquivo de contexto do projeto
+  (`AGENTS.md` e equivalentes) para carregar só o que não é dedutível do código,
+  com a evidência que sustenta o corte e o método para não perder guardrail.
+- `docs/AGENTS.example.md` — um modelo para copiar e adaptar, no formato que
+  este handoff pressupõe, mais a tabela do que cortar primeiro.
+
+Nenhuma mudança de código. A CLI não escreve nem edita o `AGENTS.md` do seu
+projeto: os dois documentos são orientação, e os sete comandos funcionam igual
+sem eles.
+
 ## [0.3.1] — 2026-09-08
 
 ### Alterado
