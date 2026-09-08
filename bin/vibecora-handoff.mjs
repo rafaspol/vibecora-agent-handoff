@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config.mjs';
 
 const COMMANDS = {
   init: () => import('../src/commands/init.mjs'),
+  start: () => import('../src/commands/start.mjs'),
   new: () => import('../src/commands/new.mjs'),
   brief: () => import('../src/commands/brief.mjs'),
   check: () => import('../src/commands/check.mjs'),
@@ -14,7 +15,9 @@ const COMMANDS = {
 
 const USAGE = `vibecora-handoff <comando> [opções]
 
-  init       cria config + arquivo de entrada (não sobrescreve)
+  init       cria config, entrada e travas (não sobrescreve)
+  start      mede o estado ANTES de a sessão começar; sai 1 se bloqueado,
+             e chama o brief no fim (rede, só leitura, nada é escrito)
   new        regenera o retrato inteiro a partir do Git + entrada (offline)
              --extra-class <c>   classe extra que passos posteriores do fluxo
                                  (ex.: roadmap-sync) vão tocar; repetível
@@ -24,9 +27,10 @@ const USAGE = `vibecora-handoff <comando> [opções]
   audit      reconcilia GitHub, /api/release e a plataforma (rede, só leitura)
 
 Opções gerais:
-  --json           saída em JSON (brief, check, finalize)
+  --json            saída em JSON (start, brief, check, finalize)
   --config <path>   caminho do arquivo de config (default .agents/handoff.config.json)
   --result <r>      finalize: result do run_completed (success|failed|partial|unknown)
+  --recorded-at <iso>  new: recorded_at explícito (default: agora, em UTC)
   -h, --help
 `;
 

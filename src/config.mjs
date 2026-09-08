@@ -13,10 +13,17 @@ export const DEFAULT_CONFIG = {
     input: '.agents/handoff.input.yaml',
     performance: '.agents/performance.jsonl',
     friction: '.agents/friction.log',
+    constraints: '.agents/constraints.yaml',
     roadmap: null, // opcional; null => roadmap não faz parte do fluxo
   },
   git: {
     mainRef: 'main',
+  },
+  start: {
+    // Quantos commits do arquivo de constraints olhar para trás. Teto porque a
+    // leitura é um `git show` por commit, e um id apagado aparece no commit
+    // seguinte — não daqui a cem.
+    constraintsHistoryLimit: 50,
   },
   classify: {
     // Regras ordenadas: a primeira que casar decide a classe do caminho.
@@ -29,6 +36,7 @@ export const DEFAULT_CONFIG = {
           '.agents/handoff.input.yaml',
           '.agents/performance.jsonl',
           '.agents/friction.log',
+          '.agents/constraints.yaml',
         ],
       },
       { class: 'general_docs', match: ['docs/decisions/**', 'README.md'] },

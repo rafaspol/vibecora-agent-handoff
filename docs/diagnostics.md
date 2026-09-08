@@ -1,5 +1,45 @@
 # Diagnóstico
 
+## `start` diz `queue_hidden`
+
+Existe uma PR aberta, ou uma branch no remoto cujo commit não está no seu clone.
+É trabalho que o retrato, por ser imutável, não tem como conhecer. Rode
+`git fetch`, olhe o que apareceu e decida — não comece por cima.
+
+Se o seu fluxo mantém PRs abertas por muito tempo, este detector vai bloquear
+toda abertura. Nesse caso a resposta certa é **desligá-lo**, não conviver com o
+contorno: um bloqueio que dispara sempre já não mede nada.
+
+## `start` diz `snapshot_stale`
+
+O commit do retrato não está na linha publicada nem à frente dela — são
+históricos diferentes. Ou o retrato veio de uma branch que não foi mergeada, ou
+seu clone está numa linha divergente. Rode `git fetch` e compare antes de
+trabalhar.
+
+Um retrato **à frente** do publicado (trabalho local ainda não pushado) não cai
+aqui: é o caso normal de quem ainda não deu push. E um projeto **sem retrato**
+também não — só falta gravar o primeiro com `new`.
+
+## `start` diz `constraint_dropped`
+
+Um id que já existiu no arquivo de travas não está mais nem em `constraints` nem
+em `retired`. Ou foi apagado sem querer — restaure — ou a remoção foi
+deliberada, e aí ela precisa ser dita:
+
+```yaml
+retired:
+  - id: <o-id>
+    motivo: "por que deixou de valer"
+    em: 2026-09-08
+```
+
+## `start` não bloqueia nada e o detector de travas nunca dispara
+
+O arquivo de travas provavelmente não está commitado. A comparação é contra o
+**histórico Git** do arquivo; sem commit não há histórico, e o detector fica
+inerte. `git add .agents/constraints.yaml && git commit`.
+
 ## `check` diz "performance.jsonl não contém run_completed"
 
 Rode `vibecora-handoff finalize`. O `check` exige o evento de fechamento; um

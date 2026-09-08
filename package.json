@@ -1,7 +1,22 @@
 {
   "name": "vibecora-agent-handoff",
-  "version": "0.2.0",
-  "description": "Contrato de handoff v3 entre agentes: schema, geracao por comando, verificacao offline e reconciliacao conectada.",
+  "version": "0.3.0",
+  "description": "Contrato de handoff entre agentes de codigo: mede o estado do repositorio na abertura da sessao, gera um retrato verificavel no fechamento.",
+  "keywords": [
+    "handoff",
+    "agents",
+    "ai-agents",
+    "coding-agents",
+    "git",
+    "cli",
+    "yaml",
+    "provenance",
+    "multi-agent"
+  ],
+  "homepage": "https://github.com/rafaspol/vibecora-agent-handoff#readme",
+  "bugs": {
+    "url": "https://github.com/rafaspol/vibecora-agent-handoff/issues"
+  },
   "type": "module",
   "bin": {
     "vibecora-handoff": "./bin/vibecora-handoff.mjs"
@@ -26,6 +41,7 @@
     "bin",
     "src",
     "docs",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],

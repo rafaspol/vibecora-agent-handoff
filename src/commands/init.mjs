@@ -52,6 +52,45 @@ context:
 # change_class: [process]
 `;
 
+const CONSTRAINTS_TEMPLATE = `# Travas: decisões que NÃO pertencem a nenhum retrato.
+#
+# O retrato é substituído inteiro a cada entrega. Uma decisão cara que more
+# dentro dele depende de alguém copiá-la para o próximo — e é assim que ela
+# desaparece num merge, junto com as tarefas de verdade.
+#
+# Aqui elas ficam fora do ciclo. Acrescentar é livre; REMOVER exige mover o id
+# para \`retired\` com o motivo. O \`vibecora-handoff start\` compara os ids daqui
+# com os que já existiram no histórico Git DESTE arquivo e bloqueia a abertura
+# quando um sumiu sem aposentadoria.
+#
+# COMMITE ESTE ARQUIVO. Enquanto ele não estiver no histórico, não há com o que
+# comparar e o detector fica inerte.
+#
+# O que entra: decisão medida que um agente futuro tentaria "consertar", peça
+# que parece morta e não está, dívida com dono e sem prazo.
+# O que NÃO entra: tarefa. Tarefa vive no \`remaining\` do retrato e morre quando
+# é feita.
+
+version: 1
+
+constraints: []
+# Exemplo do formato:
+#   - id: polaridade-invertida        # slug kebab-case, único
+#     resumo: >                       # o que é, dito na polaridade correta
+#       O contraste invertido nesta tela é intencional.
+#     porque: >                       # por que NÃO é bug — é isto que faz a
+#       Foi medido contra a referência e escolhido assim   # trava sobreviver a
+#       mesmo assim.                                       # quem discordar dela
+#     fonte: "ADR 0007"               # onde verificar
+
+# Travas removidas de propósito. Mover para cá é o que distingue uma decisão de
+# um apagamento — e é o que o detector \`constraint_dropped\` procura.
+retired: []
+#   - id: polaridade-invertida
+#     motivo: "a referência mudou; a inversão deixou de fazer sentido"
+#     em: 2026-01-01
+`;
+
 export function run(_args, { config, configInfo }) {
   const created = [];
   const skipped = [];
@@ -74,6 +113,23 @@ export function run(_args, { config, configInfo }) {
     fs.mkdirSync(path.dirname(inputPath), { recursive: true });
     fs.writeFileSync(inputPath, INPUT_TEMPLATE);
     created.push(inputPath);
+  }
+
+  // Sem este arquivo no histórico, o detector `constraint_dropped` não tem com
+  // o que comparar e fica inerte para sempre — um detector morto em silêncio é
+  // pior que um ausente. Criá-lo vazio é o que torna o mecanismo descobrível.
+  if (config.files.constraints) {
+    const constraintsPath = path.resolve(
+      process.cwd(),
+      config.files.constraints,
+    );
+    if (fs.existsSync(constraintsPath)) {
+      skipped.push(constraintsPath);
+    } else {
+      fs.mkdirSync(path.dirname(constraintsPath), { recursive: true });
+      fs.writeFileSync(constraintsPath, CONSTRAINTS_TEMPLATE);
+      created.push(constraintsPath);
+    }
   }
 
   for (const f of created) console.log(`criado: ${f}`);
