@@ -48,6 +48,7 @@ export function run(args, { cwd, config }) {
       changedPaths: git.changedPathsSince(git.baseRef()),
       commitExists: git.commitExists,
       mainContains: git.mainContains,
+      isAncestor: git.isAncestor,
     },
     classifier,
   });

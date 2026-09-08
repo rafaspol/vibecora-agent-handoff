@@ -45,7 +45,13 @@ resultado futuro de deploy — isso vem do `audit`.
   retrato resume a sessão inteira.
 - histórico append-only: exatamente um `run_completed` para o `run_id`;
 - cross-check: `run_completed` bate com o retrato em `task_class`, `operation`,
-  `commit`, `code_state`, `release_intent`, `roadmap_status`.
+  `code_state`, `release_intent`, `roadmap_status`. Em `commit` a exigência é
+  mais fraca de propósito: o commit do evento tem que ser igual ao do retrato
+  **ou ancestral dele**. `new` grava `code.commit` com o HEAD do momento e
+  `finalize` não reescreve o evento, então um commit feito depois de gravar
+  reprovava um retrato honesto. Ancestral quer dizer que o trabalho do evento
+  está contido no que o retrato descreve; quem guarda a honestidade sobre
+  `merged_main` é a regra de Git acima.
 
 ## `performance.jsonl`
 

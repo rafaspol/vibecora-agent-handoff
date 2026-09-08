@@ -85,6 +85,48 @@ test('check: consistente após new+finalize; acusa árvore suja quando muda runt
   repo.cleanup();
 });
 
+test('check: commit DEPOIS do retrato não reprova; outra linha reprova', () => {
+  // O caso real: o fluxo do AGENTS.md manda gravar o retrato por último, mas
+  // quando um commit escapa depois disso o cruzamento reprovava um retrato
+  // honesto — e a saída inventada era um `run_id` com sufixo. O evento é
+  // idempotente por `run_id` e guarda o commit de quando `new` rodou; basta que
+  // ele esteja CONTIDO no que o retrato aponta.
+  const repo = setup();
+  runCli(repo.dir, ['new']);
+  runCli(repo.dir, ['finalize']);
+
+  repo.write('src/d.mjs', 'export const w = 4;\n');
+  repo.git('add', '-A');
+  repo.git('commit', '-qm', 'trabalho depois de gravar');
+  const head = repo.git('rev-parse', 'HEAD').slice(0, 7);
+  const h = repo
+    .read('.agents/handoff.yaml')
+    // Com aspas: um sha abreviado só de dígitos seria lido como NÚMERO. A CLI
+    // não tem esse buraco (js-yaml cita ao gravar), mas quem escreve o YAML à
+    // mão, como este teste, tem.
+    .replace(/commit: \S+/, `commit: "${head}"`);
+  fs.writeFileSync(path.join(repo.dir, '.agents/handoff.yaml'), h);
+
+  const depois = runCli(repo.dir, ['check']);
+  assert.equal(depois.code, 0, depois.err);
+
+  // Negativo simétrico: um commit que EXISTE e não descende do evento — aqui a
+  // raiz do histórico, anterior ao run. Existir não basta; tem que conter.
+  const outro = repo
+    .git('rev-list', '--max-parents=0', 'HEAD')
+    .split('\n')[0]
+    .slice(0, 7);
+  const h2 = repo
+    .read('.agents/handoff.yaml')
+    .replace(/commit: \S+/, `commit: "${outro}"`);
+  fs.writeFileSync(path.join(repo.dir, '.agents/handoff.yaml'), h2);
+
+  const fora = runCli(repo.dir, ['check']);
+  assert.equal(fora.code, 1);
+  assert.match(fora.err, /run_completed\.commit/);
+  repo.cleanup();
+});
+
 test('check acusa commit inexistente', () => {
   const repo = setup();
   runCli(repo.dir, ['new']);

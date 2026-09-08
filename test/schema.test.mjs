@@ -42,6 +42,7 @@ function fixture() {
     changedPaths: ['scripts/a.mjs'],
     commitExists: () => true,
     mainContains: () => false,
+    isAncestor: () => false,
   };
   return { handoff, event, git };
 }
@@ -146,6 +147,53 @@ test('cross-check com run_completed: release_intent divergente', () => {
     classifier,
   });
   assert.ok(errs.some((e) => e.includes('run_completed.release_intent')));
+});
+
+test('cross-check: commit do retrato DESCENDENTE do evento passa', () => {
+  // `new` grava `code.commit` com o HEAD do momento e `finalize` não reescreve
+  // o evento. Commitar depois de gravar fazia divergir e reprovava um retrato
+  // honesto — a dor que obrigou a inventar `run_id` com sufixo três vezes num
+  // dia. O trabalho do evento está CONTIDO no que o retrato descreve.
+  const { handoff, event, git } = fixture();
+  handoff.code.commit = 'def5678';
+  assert.deepEqual(
+    validateHandoff({
+      handoff,
+      performanceEvents: [event],
+      git: { ...git, isAncestor: (a, b) => a === 'abc1234' && b === 'def5678' },
+      classifier,
+    }),
+    [],
+  );
+});
+
+test('cross-check: commit de outra linha de histórico reprova', () => {
+  // O negativo simétrico do anterior. Sem ele, a regra passaria a aceitar
+  // qualquer commit diferente — que é exatamente o que o cruzamento existe
+  // para pegar.
+  const { handoff, event, git } = fixture();
+  handoff.code.commit = 'f00ba12';
+  const errs = validateHandoff({
+    handoff,
+    performanceEvents: [event],
+    git: { ...git, isAncestor: () => false },
+    classifier,
+  });
+  assert.ok(errs.some((e) => e.includes('run_completed.commit')));
+});
+
+test('cross-check: sem isAncestor disponível, só a igualdade vale', () => {
+  // `git` é opcional no schema, e quem não o fornece não perde o cruzamento:
+  // degrada para o comportamento anterior em vez de deixar de checar.
+  const { handoff, event, git } = fixture();
+  handoff.code.commit = 'def5678';
+  const errs = validateHandoff({
+    handoff,
+    performanceEvents: [event],
+    git: { ...git, isAncestor: undefined },
+    classifier,
+  });
+  assert.ok(errs.some((e) => e.includes('run_completed.commit')));
 });
 
 test('handoff sem pendências é válido; múltiplos riscos idem', () => {

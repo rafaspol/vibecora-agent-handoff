@@ -22,6 +22,13 @@ O commit do retrato não está em `origin/main` nem em `main` local. Se o merge
 ainda não aconteceu, use `code_state: local_commit` ou `pushed_branch` na
 entrada. Se aconteceu, atualize as refs (`git fetch`) e rode `new` de novo.
 
+## `check` diz `run_completed.commit deve coincidir ... ou ser ancestral dele`
+
+O commit do evento não está no histórico do commit do retrato — são linhas
+diferentes, não um commit a mais. Um commit feito **depois** do `new` não cai
+aqui: ancestral passa. Se o retrato aponta para outra branch, regrave com `new`
+a partir do commit certo.
+
 ## `check` diz `code.commit <sha> não existe`
 
 O commit foi reescrito (rebase, amend, squash) depois do `new`. Rode `new` de

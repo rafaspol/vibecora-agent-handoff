@@ -155,7 +155,23 @@ export function validateSchema(handoff, errors) {
   }
 }
 
-function validateRunEvent(handoff, performanceEvents, errors) {
+// O commit do evento não precisa ser IGUAL ao do retrato: basta estar CONTIDO
+// nele. `new` reescreve `code.commit` com o HEAD do momento e `finalize` é
+// idempotente por `run_id` — então um commit feito depois de gravar fazia os
+// dois divergirem e reprovava um retrato honesto, o que obrigava a inventar
+// `run_id` com sufixo. Ancestral quer dizer que o trabalho do evento está
+// dentro do que o retrato descreve; a honestidade sobre `merged_main` continua
+// guardada por `mainContains`, em validateGitCoherence.
+function commitCoincide(runEvent, handoff, git) {
+  const declarado = handoff.code?.commit;
+  if (runEvent.commit === declarado) return true;
+  if (!runEvent.commit || !declarado) return false;
+  return typeof git?.isAncestor === 'function'
+    ? git.isAncestor(runEvent.commit, declarado)
+    : false;
+}
+
+function validateRunEvent(handoff, performanceEvents, git, errors) {
   const matching = performanceEvents.filter(
     (e) => e.event === 'run_completed' && e.run_id === handoff.run_id,
   );
@@ -172,7 +188,6 @@ function validateRunEvent(handoff, performanceEvents, errors) {
   for (const [field, expected] of [
     ['task_class', handoff.task_class],
     ['operation', handoff.operation],
-    ['commit', handoff.code?.commit],
     ['code_state', handoff.code?.state],
     ['release_intent', handoff.release_intent],
     ['roadmap_status', handoff.roadmap?.status],
@@ -183,9 +198,15 @@ function validateRunEvent(handoff, performanceEvents, errors) {
       );
     }
   }
+  if (!commitCoincide(runEvent, handoff, git)) {
+    errors.push(
+      `run_completed.commit deve coincidir com o handoff (${String(handoff.code?.commit)}) ou ser ancestral dele.`,
+    );
+  }
 }
 
-// `git` (opcional): { changedPaths: string[], commitExists(sha), mainContains(sha) }
+// `git` (opcional): { changedPaths: string[], commitExists(sha), mainContains(sha),
+//                    isAncestor(sha, ref) }
 // `classifier` (opcional): de makeClassifier(config)
 function validateGitCoherence(handoff, git, classifier, errors) {
   if (!git) return;
@@ -234,7 +255,7 @@ export function validateHandoff({
 }) {
   const errors = [];
   validateSchema(handoff, errors);
-  validateRunEvent(handoff, performanceEvents, errors);
+  validateRunEvent(handoff, performanceEvents, git, errors);
   validateGitCoherence(handoff, git, classifier, errors);
   return errors;
 }
