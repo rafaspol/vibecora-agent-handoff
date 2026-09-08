@@ -1,6 +1,6 @@
 {
   "name": "vibecora-agent-handoff",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Contrato de handoff entre agentes de codigo: mede o estado do repositorio na abertura da sessao, gera um retrato verificavel no fechamento.",
   "keywords": [
     "handoff",

@@ -11,6 +11,15 @@ acontece sozinho.
 npm i -D github:rafaspol/vibecora-agent-handoff#v0.3.0
 ```
 
+## [0.3.1] — 2026-09-08
+
+### Alterado
+
+- README reescrito em formato de referência técnica: "o que faz" em uma frase,
+  o problema em tabela, e comandos, detectores, configuração e travas em tabelas
+  e blocos de código. A versão anterior contava as motivações como narrativa.
+  Nenhuma mudança de código — só documentação.
+
 ## [0.3.0] — 2026-09-08
 
 A abertura da sessão passa a medir o estado, em vez de só imprimir o retrato.
