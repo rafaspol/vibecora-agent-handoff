@@ -23,6 +23,7 @@ npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
   humana/JSON gerada pelo mesmo reducer.
 - Resultado atrasado preservado como candidato alternativo, associado ao claim
   anterior e ao merge-base calculado.
+- Impedimentos registráveis sem alteração silenciosa da posição da tarefa.
 - Medição apenas em `task next`, cache local de 15 minutos e valores
   indisponíveis representados como `unknown`.
 - Checkpoint AES-256-GCM quando qualquer recurso conhecido chega a 20% ou menos,

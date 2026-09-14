@@ -73,6 +73,28 @@ test('dependência bloqueia sem reordenar e expõe a próxima executável', () =
   assert.equal(view.nextExecutable.id, 'b');
 });
 
+test('impedimento bloqueia sem alterar prioridade e pode ser limpo', () => {
+  const base = [draft('a', 1), approve('a')];
+  const impeded = reduceTaskEvents(
+    [...base, event('task_impeded', { taskId: 'a', reason: 'aguarda decisão' })],
+    { project: 'p' },
+  );
+  assert.deepEqual(impeded.queue, ['a']);
+  assert.equal(
+    boardView(impeded).blockedPriorities[0].blockers.impediment,
+    'aguarda decisão',
+  );
+  const clear = reduceTaskEvents(
+    [
+      ...base,
+      event('task_impeded', { taskId: 'a', reason: 'aguarda decisão' }),
+      event('task_impediment_cleared', { taskId: 'a' }),
+    ],
+    { project: 'p' },
+  );
+  assert.equal(boardView(clear).nextExecutable.id, 'a');
+});
+
 test('remoção e reordenação só acontecem após aprovação e preservam história', () => {
   const initial = [draft('a', 1), approve('a'), draft('b', 2), approve('b')];
   const removeProposal = event('proposal_created', {

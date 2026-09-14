@@ -170,6 +170,9 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
     '--integrated',
   ]);
   assert.equal(integrate.code, 0, integrate.err);
+  const history = runCli(fixture.consumer.dir, ['task', 'list']);
+  assert.match(history.out, /Histórico:/);
+  assert.match(history.out, /task-b — Tarefa task-b \[done\]/);
 
   const low = runCli(fixture.consumer.dir, [
     'task',
@@ -262,5 +265,43 @@ test('task resume transfere o claim e restaura em worktree isolada', () => {
     'estado preventivo\n',
   );
   fixture.consumer.git('worktree', 'remove', '--force', destination);
+  fixture.cleanup();
+});
+
+test('task block e unblock registram impedimento sem mudar a posição', () => {
+  const fixture = setup();
+  const task = JSON.parse(propose(fixture.consumer, 'task-a', 1).out);
+  runCli(fixture.consumer.dir, [
+    'task',
+    'approve',
+    task.proposalId,
+    '--approval-ref',
+    'thread:a',
+  ]);
+  const blocked = runCli(fixture.consumer.dir, [
+    'task',
+    'block',
+    '--task-id',
+    'task-a',
+    '--reason',
+    'aguarda decisão',
+  ]);
+  assert.equal(blocked.code, 0, blocked.err);
+  const during = JSON.parse(
+    runCli(fixture.consumer.dir, ['task', 'list', '--json']).out,
+  );
+  assert.equal(during.priorities[0].rank, 1);
+  assert.equal(during.blockedPriorities[0].id, 'task-a');
+  const unblocked = runCli(fixture.consumer.dir, [
+    'task',
+    'unblock',
+    '--task-id',
+    'task-a',
+  ]);
+  assert.equal(unblocked.code, 0, unblocked.err);
+  const after = JSON.parse(
+    runCli(fixture.consumer.dir, ['task', 'list', '--json']).out,
+  );
+  assert.equal(after.nextExecutable.id, 'task-a');
   fixture.cleanup();
 });

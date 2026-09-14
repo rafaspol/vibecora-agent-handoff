@@ -30,6 +30,10 @@ npx vibecora-handoff task next --owner <agente> \
 `--suggested-rank`. Nenhuma das duas altera a fila antes de `task approve`.
 Dependências são repetidas com `--depends-on`.
 
+Um impedimento factual é registrado com
+`task block --task-id <id> --reason <motivo>` e removido com `task unblock`.
+Isso não muda a posição da tarefa.
+
 ## Estados
 
 `draft` → `approved` → `active` → `ready` → `done`. Uma remoção aprovada leva

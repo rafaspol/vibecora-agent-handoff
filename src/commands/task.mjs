@@ -18,7 +18,17 @@ import {
 import { boardView, proposalImpact } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
 
-const ACTIONS = new Set(['list', 'propose', 'approve', 'next', 'arm', 'resume', 'finish']);
+const ACTIONS = new Set([
+  'list',
+  'propose',
+  'approve',
+  'next',
+  'arm',
+  'resume',
+  'finish',
+  'block',
+  'unblock',
+]);
 
 function required(value, label) {
   if (value == null || value === '') throw new Error(`${label} é obrigatório.`);
@@ -65,7 +75,29 @@ function formatList(board) {
   lines.push(
     '',
     `Próxima executável: ${view.nextExecutable ? `${view.nextExecutable.id} — ${view.nextExecutable.title}` : 'nenhuma'}`,
-    `Mudança sugerida: ${view.recommendation}`,
+    '',
+    'Prioridades bloqueadas:',
+  );
+  if (view.blockedPriorities.length === 0) lines.push('  nenhuma');
+  for (const task of view.blockedPriorities) {
+    lines.push(
+      `  ${task.rank}. ${task.id} — ${[
+        ...task.blockers.dependencies.map((id) => `depende de ${id}`),
+        task.blockers.impediment,
+      ].filter(Boolean).join('; ')}`,
+    );
+  }
+  lines.push('', 'Mudanças sugeridas:');
+  if (view.suggestedChanges.length === 0) lines.push('  sem mudança sugerida');
+  for (const proposal of view.suggestedChanges) {
+    const impact = proposal.impact;
+    const movement =
+      proposal.kind === 'remove'
+        ? `remove da posição ${impact.currentRank}; promove ${impact.promoted.join(', ') || 'ninguém'}`
+        : `posição ${impact.suggestedRank}; desloca ${impact.displaced.join(', ') || 'ninguém'}`;
+    lines.push(`  ${proposal.id}: ${proposal.kind} ${proposal.taskId} — ${movement}`);
+  }
+  lines.push(
     '',
     'Rascunhos aguardando aprovação:',
   );
@@ -73,7 +105,11 @@ function formatList(board) {
   for (const task of view.drafts) {
     lines.push(`  ${task.id} — ${task.title} · posição sugerida ${task.suggestedRank}`);
   }
-  lines.push('', `Histórico: ${view.history.length} tarefa(s) done/removed.`);
+  lines.push('', 'Histórico:');
+  if (view.history.length === 0) lines.push('  vazio');
+  for (const task of view.history) {
+    lines.push(`  ${task.id} — ${task.title} [${task.status}]`);
+  }
   return lines.join('\n');
 }
 
@@ -304,6 +340,30 @@ function resumable(board) {
     }));
 }
 
+function setImpediment(args, repo, tasks, blocked) {
+  const taskId = required(args.taskId, '--task-id');
+  const board = currentBoard(repo, tasks.project);
+  const task = board.tasks[taskId];
+  if (!task) throw new Error(`Tarefa inexistente: ${taskId}.`);
+  const event = blocked
+    ? newEvent('task_impeded', {
+        taskId,
+        reason: required(args.reason, '--reason'),
+      })
+    : newEvent('task_impediment_cleared', { taskId });
+  append({
+    repo,
+    tasks,
+    events: [event],
+    message: `task: ${blocked ? 'registra' : 'limpa'} impedimento ${taskId}`,
+  });
+  return {
+    taskId,
+    blocked,
+    reason: blocked ? event.reason : null,
+  };
+}
+
 function resume(args, ctx, repo, tasks) {
   const board = currentBoard(repo, tasks.project);
   if (!args.claim) return { resumable: resumable(board) };
@@ -461,7 +521,9 @@ function finish(args, ctx, repo, tasks) {
 export async function run(args, ctx) {
   const action = args._[0];
   if (!ACTIONS.has(action)) {
-    console.error('Use vibecora-handoff task list|propose|approve|next|arm|resume|finish.');
+    console.error(
+      'Use vibecora-handoff task list|propose|approve|next|arm|resume|finish|block|unblock.',
+    );
     return 2;
   }
   try {
@@ -474,7 +536,8 @@ export async function run(args, ctx) {
     else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
     else if (action === 'arm') result = arm(args, ctx, repo, tasks);
     else if (action === 'resume') result = resume(args, ctx, repo, tasks);
-    else result = finish(args, ctx, repo, tasks);
+    else if (action === 'finish') result = finish(args, ctx, repo, tasks);
+    else result = setImpediment(args, repo, tasks, action === 'block');
 
     print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project)) : result, args.json);
     return 0;

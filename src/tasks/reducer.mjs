@@ -211,12 +211,18 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       task.doneAt = event.at;
       board.queue = board.queue.filter((id) => id !== task.id);
     } else if (event.type === 'task_impeded') {
-      requireTask(board, event.taskId).impediment = {
+      const task = requireTask(board, event.taskId);
+      if (!['approved', 'active'].includes(task.status)) {
+        throw new Error(`A tarefa ${task.id} não aceita impedimento em ${task.status}.`);
+      }
+      task.impediment = {
         reason: event.reason,
         at: event.at,
       };
     } else if (event.type === 'task_impediment_cleared') {
-      requireTask(board, event.taskId).impediment = null;
+      const task = requireTask(board, event.taskId);
+      if (!task.impediment) throw new Error(`A tarefa ${task.id} não tem impedimento.`);
+      task.impediment = null;
     } else {
       throw new Error(`Tipo de evento desconhecido: ${event.type}.`);
     }
@@ -257,6 +263,10 @@ export function boardView(board) {
   const history = Object.values(board.tasks).filter((task) =>
     ['done', 'removed'].includes(task.status),
   );
+  const suggestedChanges = pendingProposals.map((proposal) => ({
+    ...proposal,
+    impact: proposalImpact(board, proposal),
+  }));
   return {
     version: board.version,
     project: board.project,
@@ -266,6 +276,7 @@ export function boardView(board) {
     blockedPriorities: priorities.filter((task) => task.blockers.blocked),
     drafts,
     pendingProposals,
+    suggestedChanges,
     history,
     recommendation:
       pendingProposals.length > 0
@@ -275,12 +286,11 @@ export function boardView(board) {
 }
 
 export function proposalImpact(board, proposal) {
-  const view = boardView(board);
   if (proposal.kind === 'add') {
     const rank = normalizedRank(proposal.suggestedRank, board.queue.length);
     return {
       suggestedRank: rank,
-      displaced: view.priorities.slice(rank - 1).map((task) => task.id),
+      displaced: board.queue.slice(rank - 1),
     };
   }
   const currentRank = board.queue.indexOf(proposal.taskId) + 1;
@@ -328,10 +338,11 @@ export function boardProjection(board) {
       title: task.title,
       suggestedRank: task.suggestedRank,
     })),
-    pendingProposals: view.pendingProposals.map((proposal) => ({
+    pendingProposals: view.suggestedChanges.map((proposal) => ({
       id: proposal.id,
       kind: proposal.kind,
       taskId: proposal.taskId,
+      impact: proposal.impact,
     })),
     history: view.history.map((task) => ({
       id: task.id,

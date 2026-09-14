@@ -26,7 +26,7 @@ const USAGE = `vibecora-handoff <comando> [opções]
   check      valida schema, Git, histórico e evidências (offline)
   finalize   acrescenta um único run_completed (idempotente, offline)
   audit      reconcilia GitHub, /api/release e a plataforma (rede, só leitura)
-  task       fila compartilhada: list|propose|approve|next|arm|resume|finish
+  task       fila compartilhada: list|propose|approve|next|arm|resume|finish|block|unblock
 
 Opções gerais:
   --json            saída em JSON (start, brief, check, finalize)

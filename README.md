@@ -104,6 +104,7 @@ com o que comparar e ele fica inerte.
 | `task arm` | força checkpoint preventivo da tarefa ativa | escrita | ledger | conflito |
 | `task resume` | mostra retomáveis ou transfere para worktree isolada | leitura/escrita | ledger/worktree | conflito |
 | `task finish` | registra `ready`; após integração verificável, `done` | escrita | ledger | erro |
+| `task block/unblock` | registra ou limpa impedimento sem reordenar | escrita | ledger | erro |
 
 ¹ `audit` é relatório, não gate: sai 0 mesmo apontando divergência.
 
@@ -230,7 +231,7 @@ isso.
 npm test
 ```
 
-105 testes, `node --test` puro, zero devDependencies. Os testes de comando rodam a
+107 testes, `node --test` puro, zero devDependencies. Os testes de comando rodam a
 CLI de verdade contra repositórios Git temporários, com remoto bare local — os
 casos de branch ausente e histórico divergente são exercidos sem tocar a rede.
 
