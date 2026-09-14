@@ -5,9 +5,9 @@
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-blue)
 
 **O que faz:** mede o estado real do repositório **antes** de a sessão de um
-agente começar, e gera no fim um retrato verificável do que ela entregou. Um
-contrato só de passagem de bastão entre agentes de código — Claude Code, Codex,
-Cursor, ou você.
+agente começar, mantém uma fila compartilhada e prepara continuidade preventiva
+quando um recurso conhecido está perto do limite. Um contrato entre agentes de
+código — Claude Code, Codex, Cursor, ou você.
 
 CLI em Node, sem build, sem framework de teste, uma dependência de runtime.
 
@@ -47,7 +47,7 @@ O retrato nunca é editado à mão.
 ## Instalação
 
 ```bash
-npm i -D github:rafaspol/vibecora-agent-handoff#v0.3.0
+npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
 ```
 
 Node ≥ 20 e Git. `gh` é opcional — sem ele, PRs abertas não são lidas e a saída
@@ -64,6 +64,9 @@ npx vibecora-handoff start            # abre a sessão: mede, dá veredito, most
 npx vibecora-handoff new              # gera o retrato
 npx vibecora-handoff finalize         # grava o run_completed
 npx vibecora-handoff check            # verifica; sai 1 se inconsistente
+
+npx vibecora-handoff task list        # fila, bloqueios, histórico e rascunhos
+npx vibecora-handoff task next --owner <agente>
 ```
 
 Saída do `start`:
@@ -94,10 +97,17 @@ com o que comparar e ele fica inerte.
 | `finalize` | acrescenta um `run_completed` (idempotente) | — | sim | retrato inválido |
 | `check` | valida schema, Git, histórico e cruzamentos | — | — | inconsistente |
 | `audit` | reconcilia com GitHub, release e plataforma | leitura | — | — ¹ |
+| `task list` | projeta a fila canônica, bloqueios, histórico e rascunhos | leitura | — | erro |
+| `task propose` | grava proposta; nunca altera a fila aprovada | escrita | ledger | erro |
+| `task approve` | aplica proposta com referência de aprovação | escrita | ledger | conflito |
+| `task next` | mede recursos, arma se preciso e reivindica a próxima | escrita | ledger | conflito |
+| `task arm` | força checkpoint preventivo da tarefa ativa | escrita | ledger | conflito |
+| `task resume` | mostra retomáveis ou transfere para worktree isolada | leitura/escrita | ledger/worktree | conflito |
+| `task finish` | registra `ready`; após integração verificável, `done` | escrita | ledger | erro |
 
 ¹ `audit` é relatório, não gate: sai 0 mesmo apontando divergência.
 
-Flags: `--json` (`start`, `brief`, `check`, `finalize`), `--config <path>`,
+Flags: `--json` (`start`, `brief`, `check`, `finalize`, `task`), `--config <path>`,
 `--result <r>`, `--recorded-at <iso>`, `--extra-class <c>`.
 Saída 2 é reservada para "não deu para rodar" (config ilegível, arquivo
 corrompido).
@@ -143,8 +153,8 @@ retired: []                         # { id, motivo, em } — remover exige passa
 ```
 
 Acrescentar é livre. Remover sem aposentar bloqueia a próxima abertura.
-Tarefa não entra aqui: tarefa vive no `remaining` do retrato e morre quando é
-feita.
+Tarefa não entra aqui: com o sistema de tarefas habilitado, ela vive no ledger
+privado e o retrato apenas referencia o trabalho corrente quando necessário.
 
 ## Configuração
 
@@ -159,7 +169,14 @@ feita.
     "rules": [{ "class": "runtime", "match": ["app/**", "package.json"] }],
     "unknownClass": "runtime"
   },
-  "audit": { "releaseBaseUrl": null, "releaseBaseUrlEnv": "HANDOFF_AUDIT_BASE_URL" }
+  "audit": { "releaseBaseUrl": null, "releaseBaseUrlEnv": "HANDOFF_AUDIT_BASE_URL" },
+  "tasks": {
+    "enabled": false,
+    "project": null,
+    "ledger": null,
+    "thresholdPercent": 20,
+    "measurementCacheMinutes": 15
+  }
 }
 ```
 
@@ -176,7 +193,9 @@ Roteiro completo em [`docs/adoption.md`](docs/adoption.md).
 
 - **Um handoff não autoriza nada.** Não é permissão para deploy, publicação ou
   ação externa. Deploy, rollback, smoke e gates de CI ficam no seu projeto.
-- **Seis comandos rodam em qualquer projeto; o `audit` não.** Ele assume a
+- **O CLI não inventa medição.** Recursos não expostos de modo confiável pelo
+  host aparecem como `unknown`; `task arm` cobre o caso manual.
+- **Os comandos de handoff e tarefas rodam em qualquer projeto; o `audit` não.** Ele assume a
   plataforma Quave One e um `GET /api/release`. Em outra plataforma reporta a
   fonte como indisponível para sempre, e adaptar significa trocar
   `src/quave/adapter.mjs` — não há mecanismo de plugin.
@@ -200,6 +219,7 @@ isso.
 | [`docs/adoption.md`](docs/adoption.md) | adotar num projeto ou migrar de scripts próprios |
 | [`docs/diagnostics.md`](docs/diagnostics.md) | um comando reprovou e você quer saber por quê |
 | [`docs/context.md`](docs/context.md) | enxugar o `AGENTS.md` do seu projeto, e a evidência disso |
+| [`docs/tasks.md`](docs/tasks.md) | fila, governança, medição e recuperação preventiva |
 | [`docs/AGENTS.example.md`](docs/AGENTS.example.md) | um modelo de `AGENTS.md` para copiar |
 | [`docs/quave-one.md`](docs/quave-one.md) | o adaptador de plataforma do `audit` |
 | [`CHANGELOG.md`](CHANGELOG.md) | o que mudou entre as tags |
@@ -210,7 +230,7 @@ isso.
 npm test
 ```
 
-86 testes, `node --test` puro, zero devDependencies. Os testes de comando rodam a
+105 testes, `node --test` puro, zero devDependencies. Os testes de comando rodam a
 CLI de verdade contra repositórios Git temporários, com remoto bare local — os
 casos de branch ausente e histórico divergente são exercidos sem tocar a rede.
 

@@ -1,7 +1,7 @@
 {
   "name": "vibecora-agent-handoff",
-  "version": "0.3.2",
-  "description": "Contrato de handoff entre agentes de codigo: mede o estado do repositorio na abertura da sessao, gera um retrato verificavel no fechamento.",
+  "version": "0.4.0",
+  "description": "Handoff verificável, fila compartilhada de tarefas e continuidade preventiva entre agentes de código.",
   "keywords": [
     "handoff",
     "agents",
@@ -28,7 +28,9 @@
     "./gitFacts": "./src/gitFacts.mjs",
     "./reconcile": "./src/reconcile.mjs",
     "./forbiddenTerms": "./src/forbiddenTerms.mjs",
-    "./legacyV2": "./src/legacyV2.mjs"
+    "./legacyV2": "./src/legacyV2.mjs",
+    "./tasks/reducer": "./src/tasks/reducer.mjs",
+    "./tasks/checkpoint": "./src/tasks/checkpoint.mjs"
   },
   "engines": {
     "node": ">=20"
