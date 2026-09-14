@@ -25,6 +25,19 @@ export const DEFAULT_CONFIG = {
     // seguinte — não daqui a cem.
     constraintsHistoryLimit: 50,
   },
+  tasks: {
+    enabled: false,
+    project: null,
+    ledger: null,
+    branch: 'main',
+    conductor: '@rafaspol',
+    thresholdPercent: 20,
+    measurementCacheMinutes: 15,
+    maxCheckpointBytes: 25 * 1024 * 1024,
+    keyEnv: 'VIBE_CORA_TASK_KEY',
+    keyFile: null,
+    cacheDir: null,
+  },
   classify: {
     // Regras ordenadas: a primeira que casar decide a classe do caminho.
     // `match` aceita globs simples (`**`, `*`) e caminhos literais.

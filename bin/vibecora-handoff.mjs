@@ -11,6 +11,7 @@ const COMMANDS = {
   check: () => import('../src/commands/check.mjs'),
   finalize: () => import('../src/commands/finalize.mjs'),
   audit: () => import('../src/commands/audit.mjs'),
+  task: () => import('../src/commands/task.mjs'),
 };
 
 const USAGE = `vibecora-handoff <comando> [opções]
@@ -25,25 +26,53 @@ const USAGE = `vibecora-handoff <comando> [opções]
   check      valida schema, Git, histórico e evidências (offline)
   finalize   acrescenta um único run_completed (idempotente, offline)
   audit      reconcilia GitHub, /api/release e a plataforma (rede, só leitura)
+  task       fila compartilhada: list|propose|approve|next|arm|resume|finish|block|unblock
 
 Opções gerais:
   --json            saída em JSON (start, brief, check, finalize)
   --config <path>   caminho do arquivo de config (default .agents/handoff.config.json)
   --result <r>      finalize: result do run_completed (success|failed|partial|unknown)
   --recorded-at <iso>  new: recorded_at explícito (default: agora, em UTC)
+  --agent-type <tipo> --agent-id <id>  identidade para ações de tarefa
   -h, --help
 `;
 
 function parseArgs(argv) {
-  const args = { _: [], json: false, extraClass: [] };
+  const args = { _: [], json: false, extraClass: [], dependsOn: [] };
+  const valueFlags = new Map([
+    ['--config', 'config'],
+    ['--result', 'result'],
+    ['--recorded-at', 'recordedAt'],
+    ['--kind', 'kind'],
+    ['--proposal-id', 'proposalId'],
+    ['--task-id', 'taskId'],
+    ['--title', 'title'],
+    ['--objective', 'objective'],
+    ['--done-when', 'doneWhen'],
+    ['--suggested-rank', 'suggestedRank'],
+    ['--roadmap-ref', 'roadmapRef'],
+    ['--reason', 'reason'],
+    ['--consequence', 'consequence'],
+    ['--approval-ref', 'approvalRef'],
+    ['--owner', 'owner'],
+    ['--agent-type', 'agentType'],
+    ['--agent-id', 'agentId'],
+    ['--claim-epoch', 'claimEpoch'],
+    ['--quota-remaining', 'quotaRemaining'],
+    ['--context-remaining', 'contextRemaining'],
+    ['--measured-at', 'measuredAt'],
+    ['--measurement-source', 'measurementSource'],
+    ['--claim', 'claim'],
+    ['--destination', 'destination'],
+  ]);
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') args.json = true;
+    else if (a === '--integrated') args.integrated = true;
     else if (a === '-h' || a === '--help') args.help = true;
-    else if (a === '--config') args.config = argv[++i];
-    else if (a === '--result') args.result = argv[++i];
-    else if (a === '--recorded-at') args.recordedAt = argv[++i];
     else if (a === '--extra-class') args.extraClass.push(argv[++i]);
+    else if (a === '--depends-on') args.dependsOn.push(argv[++i]);
+    else if (valueFlags.has(a)) args[valueFlags.get(a)] = argv[++i];
     else args._.push(a);
   }
   return args;

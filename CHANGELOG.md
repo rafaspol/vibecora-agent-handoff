@@ -8,8 +8,39 @@ mudar a tag no seu `package.json` de propósito e rodar os testes — nunca
 acontece sozinho.
 
 ```bash
-npm i -D github:rafaspol/vibecora-agent-handoff#v0.3.0
+npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
 ```
+
+## [0.4.0] — não publicada
+
+### Adicionado
+
+- Fila única derivada de ledger Git append-only, com estados `draft`,
+  `approved`, `active`, `ready`, `done` e `removed`.
+- Propostas de inclusão, remoção e reordenação em duas etapas; aprovação exige
+  referência estável e `task propose` não muda a fila.
+- Seleção por dependências, claim concorrente com um único vencedor e saída
+  humana/JSON gerada pelo mesmo reducer.
+- Resultado atrasado preservado como candidato alternativo, associado ao claim
+  anterior e ao merge-base calculado.
+- Impedimentos registráveis sem alteração silenciosa da posição da tarefa.
+- Medição apenas em `task next`, cache local de 15 minutos e valores
+  indisponíveis representados como `unknown`.
+- Checkpoint AES-256-GCM quando qualquer recurso conhecido chega a 20% ou menos,
+  com teto de 25 MiB, recusa de credenciais e restauração em worktree isolada.
+- Origem imutável com data e identidade estruturada do agente, idade calculada
+  na leitura, data de entrada na fila e autoria da implementação vencedora.
+
+### Alterado
+
+- Claims usam `{ type, id }` em vez de responsável textual. Flags explícitas,
+  ambiente padrão e `CODEX_THREAD_ID` resolvem a identidade sem prosa manual.
+- A projeção do quadro de tarefas passa à versão 2.
+
+### Segurança
+
+- Chave fora do ledger; chave errada, adulteração, credenciais e artefatos acima
+  do teto são recusados.
 
 ## [0.3.2] — 2026-09-08
 
