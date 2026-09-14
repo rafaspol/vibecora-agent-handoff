@@ -15,20 +15,30 @@ npx vibecora-handoff task list
 npx vibecora-handoff task propose add \
   --task-id corrigir-login --title "Corrigir login" \
   --objective "Restaurar o login" --done-when "Fluxo verificado" \
-  --suggested-rank 2 --reason "Falha reproduzida"
+  --suggested-rank 2 --reason "Falha reproduzida" \
+  --agent-type codex --agent-id <instância>
 
 # somente após aprovação explícita do condutor
 npx vibecora-handoff task approve <proposal-id> \
   --approval-ref "codex-thread:<referência-estável>"
 
 # reivindica a primeira tarefa executável
-npx vibecora-handoff task next --owner <agente> \
+npx vibecora-handoff task next --agent-type codex --agent-id <instância> \
   --quota-remaining 18 --context-remaining unknown
 ```
 
 `task propose remove` exige `--consequence`. `task propose reorder` exige
 `--suggested-rank`. Nenhuma das duas altera a fila antes de `task approve`.
 Dependências são repetidas com `--depends-on`.
+
+A identidade vem primeiro de `--agent-type/--agent-id`, depois de
+`VIBECORA_AGENT_TYPE/VIBECORA_AGENT_ID`. No Codex, `CODEX_THREAD_ID` é detectado
+automaticamente. Tipo e instância são obrigatórios para criar ou reivindicar.
+
+Cada tarefa expõe a data e o agente de origem, `queuedAt` após aprovação,
+claims estruturados e `implementedBy` quando chega a `ready`. `task list`
+calcula a idade em dias completos a partir da origem, sem reordenar ou remover:
+antiguidade só pode motivar uma proposta sujeita à aprovação normal.
 
 Um impedimento factual é registrado com
 `task block --task-id <id> --reason <motivo>` e removido com `task unblock`.
@@ -47,8 +57,8 @@ devem vir de uma fonte confiável do host; o que não puder ser medido fica
 `unknown`. Se qualquer recurso conhecido estiver em 20% ou menos, um checkpoint
 cifrado é persistido no mesmo commit do claim, antes de a tarefa ser liberada.
 
-`task arm --owner <agente> --claim-epoch <n>` força um checkpoint da tarefa ativa. `task resume` mostra os casos
-retomáveis; `task resume --claim <id> --owner <agente>` restaura o estado em uma
+`task arm --agent-type <tipo> --agent-id <id> --claim-epoch <n>` força um checkpoint da tarefa ativa. `task resume` mostra os casos
+retomáveis; `task resume --claim <id> --agent-type <tipo> --agent-id <id>` restaura o estado em uma
 worktree isolada e só então conclui a transferência no ledger. Claims
 concorrentes usam push fast-forward: há um vencedor.
 
@@ -62,7 +72,8 @@ Arquivos de credencial são recusados e o artefato cifrado não pode exceder
 
 ```bash
 # árvore limpa; registra o HEAD candidato
-npx vibecora-handoff task finish --task-id <id> --owner <agente> --claim-epoch <n>
+npx vibecora-handoff task finish --task-id <id> \
+  --agent-type <tipo> --agent-id <id> --claim-epoch <n>
 
 # depois de o commit candidato estar em main/origin/main
 npx vibecora-handoff task finish --task-id <id> --integrated

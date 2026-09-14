@@ -17,6 +17,12 @@ import {
 } from '../tasks/ledger.mjs';
 import { boardView, proposalImpact } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
+import {
+  agentRef,
+  resolveAgentIdentity,
+  sameAgent,
+  shortAgentRef,
+} from '../tasks/agentIdentity.mjs';
 
 const ACTIONS = new Set([
   'list',
@@ -56,8 +62,14 @@ function print(value, json) {
   else console.log(value);
 }
 
-function formatList(board) {
-  const view = boardView(board);
+function originSummary(task) {
+  if (!task.origin) return 'origem pendente';
+  const age = task.ageDays == null ? 'idade desconhecida' : `${task.ageDays}d`;
+  return `${task.origin.at.slice(0, 10)} · ${age} · ${shortAgentRef(task.origin.agent)}`;
+}
+
+function formatList(board, now = new Date()) {
+  const view = boardView(board, { now });
   const lines = [`TAREFAS — ${view.project}`, ''];
   lines.push('Fila aprovada:');
   if (view.priorities.length === 0) lines.push('  vazia');
@@ -69,7 +81,7 @@ function formatList(board) {
         ].filter(Boolean).join(', ')}`
       : '';
     lines.push(
-      `  ${task.rank}. ${task.id} — ${task.title} [${task.status}]${task.owner ? ` · ${task.owner}` : ''}${blocker}`,
+      `  ${task.rank}. ${task.id} — ${task.title} [${task.status}] · origem ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${blocker}`,
     );
   }
   lines.push(
@@ -103,12 +115,12 @@ function formatList(board) {
   );
   if (view.drafts.length === 0) lines.push('  nenhum');
   for (const task of view.drafts) {
-    lines.push(`  ${task.id} — ${task.title} · posição sugerida ${task.suggestedRank}`);
+    lines.push(`  ${task.id} — ${task.title} · posição sugerida ${task.suggestedRank} · origem ${originSummary(task)}`);
   }
   lines.push('', 'Histórico:');
   if (view.history.length === 0) lines.push('  vazio');
   for (const task of view.history) {
-    lines.push(`  ${task.id} — ${task.title} [${task.status}]`);
+    lines.push(`  ${task.id} — ${task.title} [${task.status}] · origem ${originSummary(task)}${task.implementedBy ? ` · implementada por ${shortAgentRef(task.implementedBy)}` : ''}`);
   }
   return lines.join('\n');
 }
@@ -152,6 +164,7 @@ function propose(args, repo, tasks) {
 
   if (kind === 'add') {
     const task = proposedTask(args);
+    const agent = resolveAgentIdentity(args);
     proposal = {
       id: proposalId,
       kind,
@@ -159,7 +172,7 @@ function propose(args, repo, tasks) {
       suggestedRank: task.suggestedRank,
       reason: required(args.reason, '--reason'),
     };
-    event = newEvent('task_drafted', { task, proposal });
+    event = newEvent('task_drafted', { agent, task, proposal });
   } else {
     proposal = {
       id: proposalId,
@@ -185,6 +198,7 @@ function propose(args, repo, tasks) {
     taskId: proposal.taskId,
     impact,
     approvalRequired: true,
+    ...(event.agent ? { origin: { at: event.at, agent: event.agent } } : {}),
     message: `Peça aprovação de @rafaspol para ${proposalId}; a fila vigente não mudou.`,
   };
 }
@@ -251,7 +265,7 @@ function nextTask(args, ctx, repo, tasks) {
   const view = boardView(board);
   const task = view.nextExecutable;
   if (!task) throw new Error('Nenhuma tarefa aprovada e executável.');
-  const owner = required(args.owner, '--owner');
+  const agent = resolveAgentIdentity(args);
   const measurement = readMeasurement({
     args,
     ledgerRepo: repo,
@@ -271,7 +285,7 @@ function nextTask(args, ctx, repo, tasks) {
   events.push(
     newEvent('task_claimed', {
       taskId: task.id,
-      owner,
+      agent,
       claimEpoch,
       measurement: { ...measurement, decision },
     }),
@@ -282,18 +296,18 @@ function nextTask(args, ctx, repo, tasks) {
       tasks,
       events,
       files,
-      message: `task: reivindica ${task.id} por ${owner}`,
+      message: `task: reivindica ${task.id} por ${agentRef(agent)}`,
     });
   } finally {
     armed?.cleanup();
   }
-  return { task, owner, claimEpoch, measurement, decision, checkpoint: armed?.event.checkpoint || null };
+  return { task, owner: agent, claimEpoch, measurement, decision, checkpoint: armed?.event.checkpoint || null };
 }
 
-function findActive(board, args) {
+function findActive(board, args, agent) {
   if (args.taskId) return board.tasks[args.taskId];
   const active = Object.values(board.tasks).filter(
-    (task) => task.status === 'active' && (!args.owner || task.owner === args.owner),
+    (task) => task.status === 'active' && sameAgent(task.owner, agent),
   );
   if (active.length !== 1) {
     throw new Error('Informe --task-id; não há exatamente uma tarefa ativa compatível.');
@@ -303,11 +317,11 @@ function findActive(board, args) {
 
 function arm(args, ctx, repo, tasks) {
   const board = currentBoard(repo, tasks.project);
-  const task = findActive(board, args);
+  const agent = resolveAgentIdentity(args);
+  const task = findActive(board, args, agent);
   if (!task || task.status !== 'active') throw new Error('Tarefa ativa não encontrada.');
-  const owner = required(args.owner, '--owner');
   const claimEpoch = integer(args.claimEpoch, '--claim-epoch');
-  if (task.owner !== owner || task.claimEpoch !== claimEpoch) {
+  if (!sameAgent(task.owner, agent) || task.claimEpoch !== claimEpoch) {
     throw new Error('Responsável ou época de claim divergente.');
   }
   const epoch = (task.checkpoint?.epoch || 0) + 1;
@@ -371,7 +385,7 @@ function resume(args, ctx, repo, tasks) {
   if (!task || task.status !== 'active' || !task.checkpoint) {
     throw new Error(`Tarefa ${args.claim} não pode ser retomada.`);
   }
-  const owner = required(args.owner, '--owner');
+  const agent = resolveAgentIdentity(args);
   const claimEpoch = task.claimEpoch + 1;
   const checkpointPath = path.join(repo, task.checkpoint.path);
   const destination = path.resolve(
@@ -392,14 +406,14 @@ function resume(args, ctx, repo, tasks) {
       events: [
         newEvent('task_claimed', {
           taskId: task.id,
-          owner,
+          agent,
           claimEpoch,
           measurement: null,
         }),
       ],
-      message: `task: transfere ${task.id} para ${owner}`,
+      message: `task: transfere ${task.id} para ${agentRef(agent)}`,
     });
-    return { taskId: task.id, owner, claimEpoch, ...restored };
+    return { taskId: task.id, owner: agent, claimEpoch, ...restored };
   } catch (error) {
     execFileSync('git', ['worktree', 'remove', '--force', destination], {
       cwd: ctx.cwd,
@@ -458,13 +472,13 @@ function finish(args, ctx, repo, tasks) {
     });
     return { taskId: task.id, status: 'done', candidateCommit: task.candidateCommit };
   }
-  const owner = required(args.owner, '--owner');
+  const agent = resolveAgentIdentity(args);
   const claimEpoch = integer(args.claimEpoch, '--claim-epoch');
   if (!isClean(ctx.cwd)) throw new Error('A árvore precisa estar limpa antes de task finish.');
   const candidateCommit = head(ctx.cwd);
-  if (task.status === 'active' && task.owner !== owner) {
+  if (task.status === 'active' && !sameAgent(task.owner, agent)) {
     const claim = task.claims.find(
-      (item) => item.owner === owner && item.claimEpoch === claimEpoch,
+      (item) => sameAgent(item.agent, agent) && item.claimEpoch === claimEpoch,
     );
     if (!claim || claimEpoch >= task.claimEpoch) {
       throw new Error('O resultado não corresponde a um claim anterior desta tarefa.');
@@ -478,7 +492,7 @@ function finish(args, ctx, repo, tasks) {
       events: [
         newEvent('task_alternate_candidate', {
           taskId: task.id,
-          owner,
+          agent,
           claimEpoch,
           candidateCommit,
           mergeBase: base,
@@ -489,7 +503,7 @@ function finish(args, ctx, repo, tasks) {
     return {
       taskId: task.id,
       status: 'alternate',
-      owner,
+      owner: agent,
       claimEpoch,
       candidateCommit,
       mergeBase: base,
@@ -497,7 +511,7 @@ function finish(args, ctx, repo, tasks) {
   }
   if (
     task.status !== 'active' ||
-    task.owner !== owner ||
+    !sameAgent(task.owner, agent) ||
     task.claimEpoch !== claimEpoch
   ) {
     throw new Error('Somente o responsável atual pode marcar a tarefa como ready.');
@@ -508,7 +522,7 @@ function finish(args, ctx, repo, tasks) {
     events: [
       newEvent('task_ready', {
         taskId: task.id,
-        owner,
+        agent,
         claimEpoch,
         candidateCommit,
       }),
@@ -530,7 +544,10 @@ export async function run(args, ctx) {
     const tasks = taskConfig(ctx.config);
     const repo = syncLedger(tasks);
     let result;
-    if (action === 'list') result = boardView(currentBoard(repo, tasks.project));
+    const now = new Date();
+    if (action === 'list') {
+      result = boardView(currentBoard(repo, tasks.project), { now });
+    }
     else if (action === 'propose') result = propose(args, repo, tasks);
     else if (action === 'approve') result = approve(args, repo, tasks);
     else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
@@ -539,7 +556,7 @@ export async function run(args, ctx) {
     else if (action === 'finish') result = finish(args, ctx, repo, tasks);
     else result = setImpediment(args, repo, tasks, action === 'block');
 
-    print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project)) : result, args.json);
+    print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project), now) : result, args.json);
     return 0;
   } catch (error) {
     console.error(error.message);

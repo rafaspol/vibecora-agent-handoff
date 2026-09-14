@@ -66,7 +66,7 @@ npx vibecora-handoff finalize         # grava o run_completed
 npx vibecora-handoff check            # verifica; sai 1 se inconsistente
 
 npx vibecora-handoff task list        # fila, bloqueios, histórico e rascunhos
-npx vibecora-handoff task next --owner <agente>
+npx vibecora-handoff task next --agent-type codex --agent-id <instância>
 ```
 
 Saída do `start`:
@@ -109,7 +109,9 @@ com o que comparar e ele fica inerte.
 ¹ `audit` é relatório, não gate: sai 0 mesmo apontando divergência.
 
 Flags: `--json` (`start`, `brief`, `check`, `finalize`, `task`), `--config <path>`,
-`--result <r>`, `--recorded-at <iso>`, `--extra-class <c>`.
+`--result <r>`, `--recorded-at <iso>`, `--extra-class <c>`. Ações de tarefa
+resolvem `--agent-type/--agent-id`, depois `VIBECORA_AGENT_TYPE/_ID` e, no
+Codex, `CODEX_THREAD_ID` automaticamente.
 Saída 2 é reservada para "não deu para rodar" (config ilegível, arquivo
 corrompido).
 

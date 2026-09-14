@@ -33,6 +33,7 @@ Opções gerais:
   --config <path>   caminho do arquivo de config (default .agents/handoff.config.json)
   --result <r>      finalize: result do run_completed (success|failed|partial|unknown)
   --recorded-at <iso>  new: recorded_at explícito (default: agora, em UTC)
+  --agent-type <tipo> --agent-id <id>  identidade para ações de tarefa
   -h, --help
 `;
 
@@ -54,6 +55,8 @@ function parseArgs(argv) {
     ['--consequence', 'consequence'],
     ['--approval-ref', 'approvalRef'],
     ['--owner', 'owner'],
+    ['--agent-type', 'agentType'],
+    ['--agent-id', 'agentId'],
     ['--claim-epoch', 'claimEpoch'],
     ['--quota-remaining', 'quotaRemaining'],
     ['--context-remaining', 'contextRemaining'],

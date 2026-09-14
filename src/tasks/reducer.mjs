@@ -1,3 +1,9 @@
+import {
+  normalizeAgentIdentity,
+  sameAgent,
+  shortAgentRef,
+} from './agentIdentity.mjs';
+
 const TASK_STATES = new Set([
   'draft',
   'approved',
@@ -9,7 +15,7 @@ const TASK_STATES = new Set([
 
 export function emptyBoard(project) {
   return {
-    version: 1,
+    version: 2,
     project,
     lastEventAt: null,
     queue: [],
@@ -68,6 +74,7 @@ function applyApproval(board, proposal, event) {
     }
     task.status = 'approved';
     task.approval = proposal.approval;
+    task.queuedAt = event.at;
     board.queue = insertAt(board.queue, task.id, proposal.suggestedRank);
     return;
   }
@@ -139,9 +146,14 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       const task = {
         ...event.task,
         status: 'draft',
+        origin: event.agent
+          ? { at: event.at, agent: normalizeAgentIdentity(event.agent) }
+          : null,
+        queuedAt: null,
         owner: null,
         claimEpoch: 0,
         claims: [],
+        implementedBy: null,
         checkpoint: null,
         alternateCandidates: [],
         impediment: null,
@@ -155,6 +167,15 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
         kind: 'add',
         status: 'pending',
         createdAt: event.at,
+      };
+    } else if (event.type === 'task_origin_recorded') {
+      const task = requireTask(board, event.taskId);
+      if (task.origin) {
+        throw new Error(`A origem da tarefa ${task.id} já foi registrada.`);
+      }
+      task.origin = {
+        at: task.createdAt,
+        agent: normalizeAgentIdentity(event.agent),
       };
     } else if (event.type === 'proposal_created') {
       if (board.proposals[event.proposal.id]) {
@@ -170,6 +191,7 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       applyApproval(board, requireProposal(board, event.proposalId), event);
     } else if (event.type === 'task_claimed') {
       const task = requireTask(board, event.taskId);
+      const agent = normalizeAgentIdentity(event.agent);
       if (!['approved', 'active'].includes(task.status)) {
         throw new Error(`A tarefa ${task.id} não pode ser reivindicada em ${task.status}.`);
       }
@@ -177,12 +199,12 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
         throw new Error(`Época de claim inválida para ${task.id}.`);
       }
       task.status = 'active';
-      task.owner = event.owner;
+      task.owner = agent;
       task.claimEpoch = event.claimEpoch;
       task.claimedAt = event.at;
       task.measurement = event.measurement || null;
       task.claims.push({
-        owner: event.owner,
+        agent,
         claimEpoch: event.claimEpoch,
         at: event.at,
       });
@@ -191,27 +213,30 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       task.checkpoint = { ...event.checkpoint, at: event.at };
     } else if (event.type === 'task_ready') {
       const task = requireTask(board, event.taskId);
+      const agent = normalizeAgentIdentity(event.agent);
       if (
         task.status !== 'active' ||
-        task.owner !== event.owner ||
+        !sameAgent(task.owner, agent) ||
         task.claimEpoch !== event.claimEpoch
       ) {
         throw new Error(`Somente o responsável atual pode concluir ${task.id}.`);
       }
       task.status = 'ready';
       task.candidateCommit = event.candidateCommit;
+      task.implementedBy = agent;
       task.readyAt = event.at;
     } else if (event.type === 'task_alternate_candidate') {
       const task = requireTask(board, event.taskId);
+      const agent = normalizeAgentIdentity(event.agent);
       const claim = task.claims.find(
         (item) =>
-          item.owner === event.owner && item.claimEpoch === event.claimEpoch,
+          sameAgent(item.agent, agent) && item.claimEpoch === event.claimEpoch,
       );
       if (!claim || event.claimEpoch >= task.claimEpoch) {
         throw new Error(`O candidato alternativo de ${task.id} não vem de claim anterior.`);
       }
       task.alternateCandidates.push({
-        owner: event.owner,
+        agent,
         claimEpoch: event.claimEpoch,
         candidateCommit: event.candidateCommit,
         mergeBase: event.mergeBase,
@@ -257,27 +282,40 @@ export function taskBlockers(board, task) {
   };
 }
 
-export function boardView(board) {
+export function taskAgeDays(origin, now) {
+  if (!origin?.at || !now) return null;
+  const elapsed = new Date(now).getTime() - new Date(origin.at).getTime();
+  if (!Number.isFinite(elapsed)) return null;
+  return Math.max(0, Math.floor(elapsed / 86_400_000));
+}
+
+function withAge(task, now) {
+  if (!now) return task;
+  return { ...task, ageDays: taskAgeDays(task.origin, now) };
+}
+
+export function boardView(board, { now = null } = {}) {
   const priorities = board.queue.map((id, index) => {
     const task = board.tasks[id];
-    return {
+    return withAge({
       rank: index + 1,
       ...task,
       blockers: taskBlockers(board, task),
-    };
+    }, now);
   });
   const nextExecutable = priorities.find(
     (task) => task.status === 'approved' && !task.blockers.blocked,
   );
   const drafts = Object.values(board.tasks)
     .filter((task) => task.status === 'draft')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((task) => withAge(task, now));
   const pendingProposals = Object.values(board.proposals)
     .filter((proposal) => proposal.status === 'pending')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const history = Object.values(board.tasks).filter((task) =>
-    ['done', 'removed'].includes(task.status),
-  );
+  const history = Object.values(board.tasks)
+    .filter((task) => ['done', 'removed'].includes(task.status))
+    .map((task) => withAge(task, now));
   const suggestedChanges = pendingProposals.map((proposal) => ({
     ...proposal,
     impact: proposalImpact(board, proposal),
@@ -336,7 +374,7 @@ export function proposalImpact(board, proposal) {
 export function boardProjection(board) {
   const view = boardView(board);
   return {
-    version: 1,
+    version: 2,
     project: view.project,
     lastEventAt: view.lastEventAt,
     priorities: view.priorities.map((task) => ({
@@ -344,7 +382,12 @@ export function boardProjection(board) {
       rank: task.rank,
       title: task.title,
       status: task.status,
+      origin: task.origin,
+      queuedAt: task.queuedAt,
       owner: task.owner,
+      claims: task.claims,
+      implementedBy: task.implementedBy,
+      readyAt: task.readyAt || null,
       dependencies: task.dependencies || [],
       blockers: task.blockers,
       roadmapRef: task.roadmapRef || null,
@@ -354,6 +397,7 @@ export function boardProjection(board) {
       id: task.id,
       title: task.title,
       suggestedRank: task.suggestedRank,
+      origin: task.origin,
     })),
     pendingProposals: view.suggestedChanges.map((proposal) => ({
       id: proposal.id,
@@ -365,9 +409,18 @@ export function boardProjection(board) {
       id: task.id,
       title: task.title,
       status: task.status,
+      origin: task.origin,
+      queuedAt: task.queuedAt,
+      implementedBy: task.implementedBy,
+      readyAt: task.readyAt || null,
       doneAt: task.doneAt || null,
     })),
   };
+}
+
+function originSummary(task) {
+  if (!task.origin) return 'origem pendente';
+  return `origem ${task.origin.at.slice(0, 10)} · ${shortAgentRef(task.origin.agent)}`;
 }
 
 export function renderBoardMarkdown(board) {
@@ -391,18 +444,18 @@ export function renderBoardMarkdown(board) {
           .join('; ')}`
       : '';
     lines.push(
-      `${task.rank}. **${task.id} — ${task.title}** · ${task.status}${blocked}`,
+      `${task.rank}. **${task.id} — ${task.title}** · ${task.status} · ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${blocked}`,
     );
   }
   lines.push('', '## Rascunhos aguardando aprovação', '');
   if (view.drafts.length === 0) lines.push('_Nenhum._');
   for (const task of view.drafts) {
-    lines.push(`- **${task.id} — ${task.title}** · posição sugerida ${task.suggestedRank}`);
+    lines.push(`- **${task.id} — ${task.title}** · posição sugerida ${task.suggestedRank} · ${originSummary(task)}`);
   }
   lines.push('', '## Histórico', '');
   if (view.history.length === 0) lines.push('_Nenhuma tarefa encerrada._');
   for (const task of view.history) {
-    lines.push(`- **${task.id} — ${task.title}** · ${task.status}`);
+    lines.push(`- **${task.id} — ${task.title}** · ${task.status} · ${originSummary(task)}${task.implementedBy ? ` · implementada por ${shortAgentRef(task.implementedBy)}` : ''}`);
   }
   lines.push('', `Mudança sugerida: ${view.recommendation}`, '');
   return lines.join('\n');

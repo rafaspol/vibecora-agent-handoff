@@ -32,6 +32,7 @@ test('push fast-forward dá um único vencedor a claims concorrentes', () => {
   git(seed, 'config', 'user.name', 'test');
   git(seed, 'config', 'user.email', 'test@test.invalid');
   const drafted = newEvent('task_drafted', {
+    agent: { type: 'codex', id: 'origin' },
     task: {
       id: 'task-a',
       title: 'A',
@@ -54,7 +55,7 @@ test('push fast-forward dá um único vencedor a claims concorrentes', () => {
     approvedBy: '@rafaspol',
     approvalRef: 'thread:test',
   });
-  fs.writeFileSync(path.join(seed, 'schema-version'), '1\n');
+  fs.writeFileSync(path.join(seed, 'schema-version'), '2\n');
   writeProjection(seed, 'p', [drafted, approved]);
   git(seed, 'add', '.');
   git(seed, 'commit', '-m', 'init');
@@ -65,12 +66,12 @@ test('push fast-forward dá um único vencedor a claims concorrentes', () => {
   const b = syncLedger({ ledger: bare, branch: 'main', cacheDir: path.join(root, 'b') });
   const claimA = newEvent('task_claimed', {
     taskId: 'task-a',
-    owner: 'agent-a',
+    agent: { type: 'codex', id: 'agent-a' },
     claimEpoch: 1,
   });
   const claimB = newEvent('task_claimed', {
     taskId: 'task-a',
-    owner: 'agent-b',
+    agent: { type: 'codex', id: 'agent-b' },
     claimEpoch: 1,
   });
   appendEventsAndPush({
@@ -95,7 +96,10 @@ test('push fast-forward dá um único vencedor a claims concorrentes', () => {
     cacheDir: path.join(root, 'verify'),
   });
   const board = currentBoard(refreshed, 'p');
-  assert.equal(board.tasks['task-a'].owner, 'agent-a');
+  assert.deepEqual(board.tasks['task-a'].owner, {
+    type: 'codex',
+    id: 'agent-a',
+  });
   assert.equal(board.tasks['task-a'].claimEpoch, 1);
   fs.rmSync(root, { recursive: true, force: true });
 });

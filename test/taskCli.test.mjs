@@ -8,6 +8,8 @@ import { execFileSync } from 'node:child_process';
 
 import { runCli, tmpRepoWithRemote } from './helpers.mjs';
 
+const agentArgs = (id) => ['--agent-type', 'codex', '--agent-id', id];
+
 function git(cwd, ...args) {
   return execFileSync('git', args, {
     cwd,
@@ -25,7 +27,7 @@ function setup() {
   git(seed, 'init', '-b', 'main');
   git(seed, 'config', 'user.name', 'test');
   git(seed, 'config', 'user.email', 'test@test.invalid');
-  fs.writeFileSync(path.join(seed, 'schema-version'), '1\n');
+  fs.writeFileSync(path.join(seed, 'schema-version'), '2\n');
   git(seed, 'add', '.');
   git(seed, 'commit', '-m', 'init');
   git(seed, 'remote', 'add', 'origin', bare);
@@ -79,6 +81,7 @@ function propose(repo, id, rank, dependencies = []) {
     String(rank),
     '--reason',
     'descoberta objetiva',
+    ...agentArgs('origin-agent'),
     ...dependencies.flatMap((dependency) => ['--depends-on', dependency]),
     '--json',
   ]);
@@ -90,10 +93,21 @@ test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
   assert.equal(proposed.code, 0, proposed.err);
   const proposal = JSON.parse(proposed.out);
   assert.equal(proposal.approvalRequired, true);
+  assert.deepEqual(proposal.origin.agent, {
+    type: 'codex',
+    id: 'origin-agent',
+  });
 
   const before = runCli(fixture.consumer.dir, ['task', 'list', '--json']);
   assert.equal(JSON.parse(before.out).priorities.length, 0);
   assert.equal(JSON.parse(before.out).drafts[0].id, 'task-a');
+  assert.equal(JSON.parse(before.out).drafts[0].ageDays, 0);
+  assert.equal(
+    JSON.parse(before.out).drafts[0].origin.agent.id,
+    'origin-agent',
+  );
+  const human = runCli(fixture.consumer.dir, ['task', 'list']);
+  assert.match(human.out, /origem \d{4}-\d{2}-\d{2} · 0d · codex:origin-a/);
 
   const missing = runCli(fixture.consumer.dir, [
     'task',
@@ -112,7 +126,9 @@ test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
     '--json',
   ]);
   assert.equal(approved.code, 0, approved.err);
-  assert.equal(JSON.parse(approved.out).board.priorities[0].id, 'task-a');
+  const approvedTask = JSON.parse(approved.out).board.priorities[0];
+  assert.equal(approvedTask.id, 'task-a');
+  assert.ok(approvedTask.queuedAt);
   fixture.cleanup();
 });
 
@@ -138,8 +154,7 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
   const high = runCli(fixture.consumer.dir, [
     'task',
     'next',
-    '--owner',
-    'agent-a',
+    ...agentArgs('agent-a'),
     '--quota-remaining',
     '21',
     '--context-remaining',
@@ -155,8 +170,7 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
     'finish',
     '--task-id',
     'task-b',
-    '--owner',
-    'agent-a',
+    ...agentArgs('agent-a'),
     '--claim-epoch',
     '1',
     '--json',
@@ -173,12 +187,12 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
   const history = runCli(fixture.consumer.dir, ['task', 'list']);
   assert.match(history.out, /Histórico:/);
   assert.match(history.out, /task-b — Tarefa task-b \[done\]/);
+  assert.match(history.out, /implementada por codex:agent-a/);
 
   const low = runCli(fixture.consumer.dir, [
     'task',
     'next',
-    '--owner',
-    'agent-b',
+    ...agentArgs('agent-b'),
     '--quota-remaining',
     '20',
     '--context-remaining',
@@ -205,8 +219,7 @@ test('medição é reutilizada por quinze minutos sem novo input', () => {
   const first = runCli(fixture.consumer.dir, [
     'task',
     'next',
-    '--owner',
-    'agent-a',
+    ...agentArgs('agent-a'),
     '--quota-remaining',
     '21',
     '--json',
@@ -233,8 +246,7 @@ test('task resume transfere o claim e restaura em worktree isolada', () => {
   const claimed = runCli(fixture.consumer.dir, [
     'task',
     'next',
-    '--owner',
-    'agent-a',
+    ...agentArgs('agent-a'),
     '--quota-remaining',
     '20',
     '--json',
@@ -242,7 +254,10 @@ test('task resume transfere o claim e restaura em worktree isolada', () => {
   assert.equal(claimed.code, 0, claimed.err);
 
   const preview = runCli(fixture.consumer.dir, ['task', 'resume', '--json']);
-  assert.equal(JSON.parse(preview.out).resumable[0].owner, 'agent-a');
+  assert.deepEqual(JSON.parse(preview.out).resumable[0].owner, {
+    type: 'codex',
+    id: 'agent-a',
+  });
 
   const destination = path.join(fixture.root, 'resumed');
   const resumed = runCli(fixture.consumer.dir, [
@@ -250,21 +265,56 @@ test('task resume transfere o claim e restaura em worktree isolada', () => {
     'resume',
     '--claim',
     'task-a',
-    '--owner',
-    'agent-b',
+    ...agentArgs('agent-b'),
     '--destination',
     destination,
     '--json',
   ]);
   assert.equal(resumed.code, 0, resumed.err);
   const result = JSON.parse(resumed.out);
-  assert.equal(result.owner, 'agent-b');
+  assert.deepEqual(result.owner, { type: 'codex', id: 'agent-b' });
   assert.equal(result.claimEpoch, 2);
   assert.equal(
     fs.readFileSync(path.join(destination, 'notes/continuar.txt'), 'utf8'),
     'estado preventivo\n',
   );
   fixture.consumer.git('worktree', 'remove', '--force', destination);
+  fixture.cleanup();
+});
+
+test('proposta nova sem identidade falha antes de escrever no ledger', () => {
+  const fixture = setup();
+  const env = { ...process.env };
+  delete env.VIBECORA_AGENT_TYPE;
+  delete env.VIBECORA_AGENT_ID;
+  delete env.CODEX_THREAD_ID;
+  const result = runCli(
+    fixture.consumer.dir,
+    [
+      'task',
+      'propose',
+      'add',
+      '--task-id',
+      'sem-origem',
+      '--title',
+      'Sem origem',
+      '--objective',
+      'Não gravar',
+      '--done-when',
+      'Nunca',
+      '--suggested-rank',
+      '1',
+      '--reason',
+      'teste',
+    ],
+    { env },
+  );
+  assert.equal(result.code, 2);
+  assert.match(result.err, /Identidade do agente indisponível/);
+  const list = JSON.parse(
+    runCli(fixture.consumer.dir, ['task', 'list', '--json']).out,
+  );
+  assert.equal(list.drafts.length, 0);
   fixture.cleanup();
 });
 

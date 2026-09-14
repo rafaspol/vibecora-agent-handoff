@@ -6,7 +6,11 @@ import {
   boardView,
   proposalImpact,
   reduceTaskEvents,
+  taskAgeDays,
 } from '../src/tasks/reducer.mjs';
+
+const AGENT_A = { type: 'codex', id: 'agent-a' };
+const AGENT_B = { type: 'codex', id: 'agent-b' };
 
 let sequence = 0;
 const event = (type, fields = {}) => ({
@@ -18,6 +22,7 @@ const event = (type, fields = {}) => ({
 
 function draft(id, rank, dependencies = []) {
   return event('task_drafted', {
+    agent: AGENT_A,
     task: {
       id,
       title: `Tarefa ${id}`,
@@ -49,6 +54,8 @@ test('rascunho e task propose não mudam a fila aprovada', () => {
   assert.equal(board.tasks.a.status, 'draft');
   assert.deepEqual(board.queue, []);
   assert.equal(boardView(board).drafts.length, 1);
+  assert.deepEqual(board.tasks.a.origin.agent, AGENT_A);
+  assert.equal(board.tasks.a.origin.at, board.tasks.a.createdAt);
 });
 
 test('aprovação insere em posição única e calcula deslocados', () => {
@@ -159,12 +166,12 @@ test('claim usa época monotônica e agente anterior não finaliza após transfe
   const base = [draft('a', 1), approve('a')];
   const claimed = event('task_claimed', {
     taskId: 'a',
-    owner: 'agent-a',
+    agent: AGENT_A,
     claimEpoch: 1,
   });
   const transferred = event('task_claimed', {
     taskId: 'a',
-    owner: 'agent-b',
+    agent: AGENT_B,
     claimEpoch: 2,
   });
   assert.throws(
@@ -176,7 +183,7 @@ test('claim usa época monotônica e agente anterior não finaliza após transfe
           transferred,
           event('task_ready', {
             taskId: 'a',
-            owner: 'agent-a',
+            agent: AGENT_A,
             claimEpoch: 1,
             candidateCommit: 'abc',
           }),
@@ -193,7 +200,7 @@ test('claim usa época monotônica e agente anterior não finaliza após transfe
           claimed,
           event('task_claimed', {
             taskId: 'a',
-            owner: 'agent-b',
+            agent: AGENT_B,
             claimEpoch: 3,
           }),
         ],
@@ -210,12 +217,12 @@ test('claim usa época monotônica e agente anterior não finaliza após transfe
           transferred,
           event('task_claimed', {
             taskId: 'a',
-            owner: 'agent-a',
+            agent: AGENT_A,
             claimEpoch: 3,
           }),
           event('task_ready', {
             taskId: 'a',
-            owner: 'agent-a',
+            agent: AGENT_A,
             claimEpoch: 1,
             candidateCommit: 'abc',
           }),
@@ -230,11 +237,11 @@ test('resultado tardio vira candidato alternativo ligado ao claim anterior', () 
   const events = [
     draft('a', 1),
     approve('a'),
-    event('task_claimed', { taskId: 'a', owner: 'agente-a', claimEpoch: 1 }),
-    event('task_claimed', { taskId: 'a', owner: 'agente-b', claimEpoch: 2 }),
+    event('task_claimed', { taskId: 'a', agent: AGENT_A, claimEpoch: 1 }),
+    event('task_claimed', { taskId: 'a', agent: AGENT_B, claimEpoch: 2 }),
     event('task_alternate_candidate', {
       taskId: 'a',
-      owner: 'agente-a',
+      agent: AGENT_A,
       claimEpoch: 1,
       candidateCommit: 'a'.repeat(40),
       mergeBase: 'b'.repeat(40),
@@ -242,7 +249,7 @@ test('resultado tardio vira candidato alternativo ligado ao claim anterior', () 
   ];
   const board = reduceTaskEvents(events, { project: 'x' });
   assert.equal(board.tasks.a.alternateCandidates.length, 1);
-  assert.equal(board.tasks.a.alternateCandidates[0].owner, 'agente-a');
+  assert.deepEqual(board.tasks.a.alternateCandidates[0].agent, AGENT_A);
   assert.throws(
     () =>
       reduceTaskEvents(
@@ -250,7 +257,7 @@ test('resultado tardio vira candidato alternativo ligado ao claim anterior', () 
           ...events,
           event('task_alternate_candidate', {
             taskId: 'a',
-            owner: 'agente-b',
+            agent: AGENT_B,
             claimEpoch: 2,
             candidateCommit: 'c'.repeat(40),
             mergeBase: 'b'.repeat(40),
@@ -268,4 +275,69 @@ test('projeção contém somente estado derivado do histórico', () => {
   assert.equal(projection.priorities[0].id, 'a');
   assert.equal(projection.priorities[0].rank, 1);
   assert.equal(projection.drafts.length, 0);
+  assert.equal(projection.version, 2);
+  assert.deepEqual(projection.priorities[0].origin.agent, AGENT_A);
+  assert.equal(projection.priorities[0].queuedAt, board.tasks.a.queuedAt);
+});
+
+test('origem histórica é atribuída uma vez sem mudar a data de entrada', () => {
+  const legacy = draft('legacy', 1);
+  delete legacy.agent;
+  const attributed = reduceTaskEvents(
+    [
+      legacy,
+      event('task_origin_recorded', {
+        taskId: 'legacy',
+        agent: AGENT_B,
+      }),
+    ],
+    { project: 'p' },
+  );
+  assert.deepEqual(attributed.tasks.legacy.origin, {
+    at: legacy.at,
+    agent: AGENT_B,
+  });
+  assert.throws(
+    () =>
+      reduceTaskEvents(
+        [
+          legacy,
+          event('task_origin_recorded', { taskId: 'legacy', agent: AGENT_B }),
+          event('task_origin_recorded', { taskId: 'legacy', agent: AGENT_A }),
+        ],
+        { project: 'p' },
+      ),
+    /já foi registrada/,
+  );
+});
+
+test('idade é só projeção e não muda a ordem aprovada', () => {
+  const events = [draft('antiga', 1), approve('antiga'), draft('nova', 1), approve('nova')];
+  const board = reduceTaskEvents(events, { project: 'p' });
+  const queueBefore = [...board.queue];
+  const view = boardView(board, { now: '2026-09-16T00:00:01Z' });
+  assert.equal(view.priorities[0].id, 'nova');
+  assert.ok(view.priorities[1].ageDays >= view.priorities[0].ageDays);
+  assert.deepEqual(board.queue, queueBefore);
+  assert.equal(taskAgeDays({ at: '2026-09-13T00:00:00Z' }, '2026-09-16T00:00:00Z'), 3);
+});
+
+test('agente do claim vencedor vira implementador; anteriores ficam nos claims', () => {
+  const board = reduceTaskEvents(
+    [
+      draft('a', 1),
+      approve('a'),
+      event('task_claimed', { taskId: 'a', agent: AGENT_A, claimEpoch: 1 }),
+      event('task_claimed', { taskId: 'a', agent: AGENT_B, claimEpoch: 2 }),
+      event('task_ready', {
+        taskId: 'a',
+        agent: AGENT_B,
+        claimEpoch: 2,
+        candidateCommit: 'a'.repeat(40),
+      }),
+    ],
+    { project: 'p' },
+  );
+  assert.deepEqual(board.tasks.a.implementedBy, AGENT_B);
+  assert.deepEqual(board.tasks.a.claims.map((claim) => claim.agent), [AGENT_A, AGENT_B]);
 });
