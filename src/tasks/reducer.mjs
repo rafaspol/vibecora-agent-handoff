@@ -287,10 +287,11 @@ export function boardView(board) {
 
 export function proposalImpact(board, proposal) {
   if (proposal.kind === 'add') {
-    const rank = normalizedRank(proposal.suggestedRank, board.queue.length);
+    const effectiveRank = normalizedRank(proposal.suggestedRank, board.queue.length);
     return {
-      suggestedRank: rank,
-      displaced: board.queue.slice(rank - 1),
+      suggestedRank: proposal.suggestedRank,
+      effectiveRank,
+      displaced: board.queue.slice(effectiveRank - 1),
     };
   }
   const currentRank = board.queue.indexOf(proposal.taskId) + 1;
@@ -307,7 +308,8 @@ export function proposalImpact(board, proposal) {
     const reordered = insertAt(without, proposal.taskId, target);
     return {
       currentRank: currentRank || null,
-      suggestedRank: reordered.indexOf(proposal.taskId) + 1,
+      suggestedRank: proposal.suggestedRank,
+      effectiveRank: reordered.indexOf(proposal.taskId) + 1,
       displaced: reordered.filter(
         (id, index) => board.queue[index] !== id && id !== proposal.taskId,
       ),

@@ -94,7 +94,7 @@ function formatList(board) {
     const movement =
       proposal.kind === 'remove'
         ? `remove da posição ${impact.currentRank}; promove ${impact.promoted.join(', ') || 'ninguém'}`
-        : `posição ${impact.suggestedRank}; desloca ${impact.displaced.join(', ') || 'ninguém'}`;
+        : `posição sugerida ${impact.suggestedRank} (efetiva agora ${impact.effectiveRank}); desloca ${impact.displaced.join(', ') || 'ninguém'}`;
     lines.push(`  ${proposal.id}: ${proposal.kind} ${proposal.taskId} — ${movement}`);
   }
   lines.push(

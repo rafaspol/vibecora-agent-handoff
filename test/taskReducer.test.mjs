@@ -56,6 +56,7 @@ test('aprovação insere em posição única e calcula deslocados', () => {
   const before = reduceTaskEvents(events, { project: 'p' });
   assert.deepEqual(proposalImpact(before, before.proposals['proposal-b']), {
     suggestedRank: 1,
+    effectiveRank: 1,
     displaced: ['a'],
   });
   const after = reduceTaskEvents([...events, approve('b')], { project: 'p' });
