@@ -77,6 +77,21 @@ function applyApproval(board, proposal, event) {
     if (['done', 'removed'].includes(task.status)) {
       throw new Error(`A tarefa ${task.id} já está ${task.status}.`);
     }
+    if (task.status === 'draft') {
+      for (const candidate of Object.values(board.proposals)) {
+        if (
+          candidate.kind === 'add' &&
+          candidate.taskId === task.id &&
+          candidate.status === 'pending'
+        ) {
+          candidate.status = 'superseded';
+          candidate.resolution = {
+            byProposal: proposal.id,
+            approval: proposal.approval,
+          };
+        }
+      }
+    }
     task.status = 'removed';
     task.removal = {
       consequence: proposal.consequence,

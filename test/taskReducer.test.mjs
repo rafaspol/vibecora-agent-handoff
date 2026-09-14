@@ -126,6 +126,35 @@ test('remoção e reordenação só acontecem após aprovação e preservam hist
   assert.equal(boardView(removed).history[0].id, 'a');
 });
 
+test('retirar rascunho encerra a proposta de inclusão que ele carregava', () => {
+  const removeProposal = event('proposal_created', {
+    proposal: {
+      id: 'remove-a-draft',
+      kind: 'remove',
+      taskId: 'a',
+      reason: 'já foi entregue',
+      consequence: 'Nenhuma entrega deixa de ser atendida.',
+    },
+  });
+  const board = reduceTaskEvents(
+    [
+      draft('a', 1),
+      removeProposal,
+      event('proposal_approved', {
+        proposalId: 'remove-a-draft',
+        approvedBy: '@rafaspol',
+        approvalRef: 'thread:remove-draft',
+      }),
+    ],
+    { project: 'p' },
+  );
+
+  assert.equal(board.tasks.a.status, 'removed');
+  assert.equal(board.proposals['proposal-a'].status, 'superseded');
+  assert.equal(board.proposals['proposal-a'].resolution.byProposal, 'remove-a-draft');
+  assert.deepEqual(boardView(board).pendingProposals, []);
+});
+
 test('claim usa época monotônica e agente anterior não finaliza após transferência', () => {
   const base = [draft('a', 1), approve('a')];
   const claimed = event('task_claimed', {
