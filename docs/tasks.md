@@ -71,7 +71,7 @@ Arquivos de credencial são recusados e o artefato cifrado não pode exceder
 ## Fechamento
 
 ```bash
-# árvore limpa; registra o HEAD candidato
+# árvore limpa; persiste HEAD no origin (ou --candidate-repository <repo>)
 npx vibecora-handoff task finish --task-id <id> \
   --agent-type <tipo> --agent-id <id> --claim-epoch <n>
 
@@ -81,6 +81,27 @@ npx vibecora-handoff task finish --task-id <id> --integrated
 
 `ready` significa concluída e verificada, aguardando integração. `done` exige
 ancestralidade Git verificável.
+
+Antes de registrar `ready`, `finish` envia apenas
+`refs/vibecora/candidates/<projeto>/<tarefa>/<SHA>` ao repositório candidato e
+confirma o SHA remoto. Não usa force, não envia main nem tags. O destino
+padrão é a URL de push de origin; `--candidate-repository` permite salvar em
+outro repositório. A URL gravada não pode conter senha, token, query ou usuário
+HTTPS; autentique por credential helper/SSH. Use um repositório privado com
+retenção dessas refs.
+
+Após perder o clone original, recupere e verifique o candidato sem alterar
+árvore, branch, claim ou ledger:
+
+```bash
+npx vibecora-handoff task recover --task-id <id> \
+  --candidate-repository <repo-salvo> --json
+```
+
+`recover` valida projeto, tarefa, URL, namespace e hash antes de buscar a ref.
+Eventos antigos sem `candidate` continuam legíveis, mas não são recuperáveis
+por este comando. Se o ledger conflitar depois do push, a ref pode ficar órfã;
+repetir o mesmo `finish` reutiliza a ref sem sobrescrever.
 
 Se um agente antigo terminar depois da transferência, ele informa seu
 `--claim-epoch`; o resultado é preservado como candidato alternativo com o
