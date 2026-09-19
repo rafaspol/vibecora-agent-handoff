@@ -19,6 +19,7 @@ import {
 import { boardView, proposalImpact } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
 import { persistCandidate, recoverCandidate } from '../tasks/candidate.mjs';
+import { verifyIntegration } from '../tasks/integration.mjs';
 import {
   agentRef,
   resolveAgentIdentity,
@@ -436,15 +437,6 @@ function isClean(cwd) {
   return !execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' }).trim();
 }
 
-function isAncestor(cwd, sha, ref) {
-  try {
-    execFileSync('git', ['merge-base', '--is-ancestor', sha, ref], { cwd, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function mergeBase(cwd, sha, ref) {
   try {
     return execFileSync('git', ['merge-base', sha, ref], {
@@ -462,19 +454,24 @@ function finish(args, ctx, repo, tasks) {
   const taskId = required(args.taskId, '--task-id');
   const task = board.tasks[taskId];
   if (!task) throw new Error(`Tarefa inexistente: ${taskId}.`);
+  if (!args.integrated && (args.integratedCommit || args.integrationEvidence || args.integrationMainRef)) {
+    throw new Error('Opções de integração exigem --integrated.');
+  }
   if (args.integrated) {
     if (task.status !== 'ready') throw new Error('Somente tarefa ready pode virar done.');
-    const ref = ctx.config.git?.mainRef || 'main';
-    if (!isAncestor(ctx.cwd, task.candidateCommit, ref) && !isAncestor(ctx.cwd, task.candidateCommit, `origin/${ref}`)) {
-      throw new Error(`O commit candidato não está integrado em ${ref}.`);
-    }
+    const integration = verifyIntegration({
+      cwd: ctx.cwd, task, project: tasks.project,
+      mainBranch: ctx.config.git?.mainRef || 'main',
+      mainRef: args.integrationMainRef, integratedCommit: args.integratedCommit,
+      evidenceRef: args.integrationEvidence,
+    });
     append({
       repo,
       tasks,
-      events: [newEvent('task_done', { taskId: task.id })],
+      events: [newEvent('task_done', { taskId: task.id, integration })],
       message: `task: conclui ${task.id}`,
     });
-    return { taskId: task.id, status: 'done', candidateCommit: task.candidateCommit };
+    return { taskId: task.id, status: 'done', candidateCommit: task.candidateCommit, integration };
   }
   const agent = resolveAgentIdentity(args);
   const claimEpoch = integer(args.claimEpoch, '--claim-epoch');

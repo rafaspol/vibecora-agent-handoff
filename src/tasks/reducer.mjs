@@ -1,3 +1,4 @@
+import { validateIntegration } from './integration.mjs';
 import {
   normalizeAgentIdentity,
   sameAgent,
@@ -252,6 +253,8 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
         throw new Error(`A tarefa ${task.id} precisa estar ready antes de done.`);
       }
       task.status = 'done';
+      task.integration = event.integration == null ? null :
+        validateIntegration(event.integration, task.candidateCommit);
       task.doneAt = event.at;
       board.queue = board.queue.filter((id) => id !== task.id);
     } else if (event.type === 'task_impeded') {
@@ -420,6 +423,7 @@ export function boardProjection(board) {
       implementedBy: task.implementedBy,
       readyAt: task.readyAt || null,
       doneAt: task.doneAt || null,
+      integration: task.integration || null,
       candidateCommit: task.candidateCommit || null,
       candidate: task.candidate || null,
     })),

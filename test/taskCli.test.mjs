@@ -175,6 +175,53 @@ test('successful push without surviving remote confirmation never records ready'
   } finally { fixture.cleanup(); }
 });
 
+test('CLI equivalent integration rejects failures without events then records verified done', () => {
+  const fixture = setup();
+  try {
+    const finish = claimCandidate(fixture);
+    const repo = fixture.consumer;
+    repo.git('checkout', '-qb', 'candidate');
+    repo.write('feature.txt', 'feature\n');
+    repo.git('add', '.');
+    repo.git('commit', '-qm', 'feature');
+    const ready = runCli(repo.dir, finish);
+    assert.equal(ready.code, 0, ready.err);
+    const candidateCommit = JSON.parse(ready.out).candidateCommit;
+    repo.git('checkout', '-q', 'main');
+    repo.write('unrelated.txt', 'other\n');
+    repo.git('add', '.');
+    repo.git('commit', '-qm', 'unrelated');
+    const unrelated = repo.git('rev-parse', 'HEAD');
+    const args = ['task', 'finish', '--task-id', 'candidate', '--integrated',
+      '--integration-main-ref', 'refs/heads/main', '--json'];
+    const ledgerBefore = git(fixture.bare, 'rev-parse', 'main');
+    for (const extra of [
+      [],
+      ['--integrated-commit', unrelated],
+      ['--integrated-commit', unrelated, '--integration-evidence', 'review:x'],
+      ['--integrated-commit', candidateCommit, '--integration-evidence', 'review:x'],
+    ]) {
+      const failed = runCli(repo.dir, [...args, ...extra]);
+      assert.equal(failed.code, 2, failed.out);
+      assert.equal(git(fixture.bare, 'rev-parse', 'main'), ledgerBefore);
+    }
+    repo.git('cherry-pick', candidateCommit);
+    const integratedCommit = repo.git('rev-parse', 'HEAD');
+    const done = runCli(repo.dir, [...args, '--integrated-commit', integratedCommit,
+      '--integration-evidence', 'review:approved']);
+    assert.equal(done.code, 0, done.err);
+    const integration = JSON.parse(done.out).integration;
+    assert.equal(integration.candidateCommit, candidateCommit);
+    assert.equal(integration.integratedCommit, integratedCommit);
+    assert.equal(integration.mainTip, integratedCommit);
+    assert.equal(integration.mode, 'patch-equivalent');
+    const board = JSON.parse(runCli(repo.dir, ['task', 'list', '--json']).out);
+    assert.deepEqual(board.history[0].integration, integration);
+    const projection = JSON.parse(git(fixture.bare, 'show', 'main:projects/chat-vibecora/board.json'));
+    assert.deepEqual(projection.history[0].integration, integration);
+  } finally { fixture.cleanup(); }
+});
+
 test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
   const fixture = setup();
   const proposed = propose(fixture.consumer, 'task-a', 1);
@@ -270,6 +317,7 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
     '--task-id',
     'task-b',
     '--integrated',
+    '--integration-main-ref', 'refs/heads/main',
   ]);
   assert.equal(integrate.code, 0, integrate.err);
   const history = runCli(fixture.consumer.dir, ['task', 'list']);
