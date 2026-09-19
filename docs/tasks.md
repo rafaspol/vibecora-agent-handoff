@@ -80,7 +80,51 @@ npx vibecora-handoff task finish --task-id <id> --integrated
 ```
 
 `ready` significa concluída e verificada, aguardando integração. `done` exige
-ancestralidade Git verificável.
+ancestralidade Git verificável, ou equivalência de patch explicitamente verificada.
+
+### Integração por ancestralidade ou patch equivalente
+
+O modo padrão `finish --integrated` exige que o próprio `candidateCommit` seja
+ancestral do main escolhido. Nunca escolhe silenciosamente entre main local e
+tracking refs divergentes: nesse caso informe, por exemplo,
+`--integration-main-ref refs/heads/main` ou
+`--integration-main-ref refs/remotes/origin/main`. O nome da branch vem de
+`git.mainRef` (padrão `main`); somente essas refs completas da branch configurada
+são aceitas, não SHA, tags ou expressões Git. A verificação é local: atualize
+explicitamente o clone antes; o comando não faz fetch/push nem modifica main.
+
+Para cherry-pick ou rebase que preservou o patch:
+
+```bash
+npx vibecora-handoff task finish --task-id <id> --integrated \
+  --integrated-commit <SHA-completo-do-commit-integrado> \
+  --integration-evidence 'review:referencia-da-revisao' \
+  --integration-main-ref refs/remotes/origin/main
+```
+
+O commit integrado deve ser ancestral da ref escolhida. Ambos os commits devem
+ter exatamente um pai e diff não vazio; merges, commits raiz, squash de vários
+commits e resolução que altere o patch não são suportados nesse modo.
+O comando calcula independentemente `git patch-id --stable` dos diffs binários
+com hashes completos, sem external diff/textconv/renames, e exige igualdade.
+Isso é equivalência segundo patch-id (que normaliza whitespace), não uma
+afirmação de identidade de árvore ou de comportamento em outro contexto.
+A evidência é referência de revisão, nunca substitui a prova Git.
+
+O evento `task_done.integration` e a projeção histórica retêm candidato,
+commit integrado, modo (`ancestry`/`patch-equivalent`), ref e tip verificados,
+patch hash e evidência. Ancestralidade preserva suporte a merges/raiz/vazios:
+nesses casos patchHash pode ser null. Eventos done antigos permanecem legados,
+com integração null, sem inventar verificações históricas.
+
+Com metadados recuperáveis, o clone deve ter um remote cuja URL de **fetch**
+seja exatamente `candidate.repository`; URLs alternativas/aliases não são
+assumidas equivalentes. Só tracking refs desses remotes são elegíveis.
+Se salvou o candidato em repositório separado, use um clone desse repositório
+ou configure explicitamente um remote correspondente e a main pretendida antes
+de verificar. Uma URL apenas de push não autentica tracking refs. Tarefas ready
+legadas ainda podem ser verificadas com objetos locais, sem fabricar metadados
+de recuperação. Nenhum modo faz cherry-pick/merge/push ou escreve credenciais.
 
 Antes de registrar `ready`, `finish` envia apenas
 `refs/vibecora/candidates/<projeto>/<tarefa>/<SHA>` ao repositório candidato e

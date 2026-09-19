@@ -34,6 +34,9 @@ Opções gerais:
   --result <r>      finalize: result do run_completed (success|failed|partial|unknown)
   --recorded-at <iso>  new: recorded_at explícito (default: agora, em UTC)
   --agent-type <tipo> --agent-id <id>  identidade para ações de tarefa
+  --integrated --integrated-commit <SHA> --integration-evidence <ref>
+                    task finish: verifica patch equivalente integrado
+  --integration-main-ref <ref>  main explícito: refs/heads/main ou refs/remotes/origin/main
   -h, --help
 `;
 
@@ -65,6 +68,9 @@ function parseArgs(argv) {
     ['--claim', 'claim'],
     ['--destination', 'destination'],
     ['--candidate-repository', 'candidateRepository'],
+    ['--integrated-commit', 'integratedCommit'],
+    ['--integration-evidence', 'integrationEvidence'],
+    ['--integration-main-ref', 'integrationMainRef'],
   ]);
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
