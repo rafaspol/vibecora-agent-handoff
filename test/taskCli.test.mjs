@@ -58,6 +58,11 @@ function setup() {
     bare,
     consumer,
     cleanup() {
+      assert.deepEqual(
+        fs.readdirSync(root).filter(name => name.startsWith('cache.operation-')),
+        [],
+        'task commands must dispose their ledger snapshots, including reads and failures',
+      );
       consumer.cleanup();
       fs.rmSync(root, { recursive: true, force: true });
     },
@@ -86,6 +91,90 @@ function propose(repo, id, rank, dependencies = []) {
     '--json',
   ]);
 }
+
+function claimCandidate(fixture) {
+  const repo = fixture.consumer;
+  const proposal = JSON.parse(propose(repo, 'candidate', 1).out);
+  assert.equal(runCli(repo.dir, ['task', 'approve', proposal.proposalId,
+    '--approval-ref', 'test:approved']).code, 0);
+  assert.equal(runCli(repo.dir, ['task', 'next', ...agentArgs('agent-a'),
+    '--quota-remaining', '80']).code, 0);
+  return ['task', 'finish', '--task-id', 'candidate', ...agentArgs('agent-a'),
+    '--claim-epoch', '1', '--json'];
+}
+
+test('ready persists only private ref, repeats safely, recovers after clone deletion', () => {
+  const fixture = setup();
+  try {
+    const args = claimCandidate(fixture);
+    const before = git(fixture.consumer.bare, 'show-ref');
+    const finished = runCli(fixture.consumer.dir, args);
+    assert.equal(finished.code, 0, finished.err);
+    const result = JSON.parse(finished.out);
+    assert.equal(result.candidate.repository, fixture.consumer.bare);
+    assert.equal(git(fixture.consumer.bare, 'rev-parse', result.candidate.ref), result.candidateCommit);
+    const list = () => JSON.parse(runCli(fixture.consumer.dir, ['task', 'list', '--json']).out);
+    const count = list().priorities[0].readyAt;
+    assert.equal(runCli(fixture.consumer.dir, args).code, 0);
+    assert.equal(list().priorities[0].readyAt, count);
+    assert.equal(git(fixture.consumer.bare, 'show-ref').split('\n')
+      .filter(line => !line.includes('refs/vibecora/')).join('\n'), before);
+    const config = fs.readFileSync(path.join(fixture.consumer.dir, '.agents/handoff.config.json'));
+    fs.rmSync(fixture.consumer.dir, { recursive: true, force: true });
+    const fresh = path.join(fixture.root, 'fresh');
+    git(fixture.root, 'clone', fixture.consumer.bare, fresh);
+    fs.mkdirSync(path.join(fresh, '.agents'), { recursive: true });
+    fs.writeFileSync(path.join(fresh, '.agents/handoff.config.json'), config);
+    const recovered = runCli(fresh, ['task', 'recover', '--task-id', 'candidate',
+      '--candidate-repository', fixture.consumer.bare, '--json']);
+    assert.equal(recovered.code, 0, recovered.err);
+    assert.equal(git(fresh, 'rev-parse', 'FETCH_HEAD'), result.candidateCommit);
+    assert.equal(runCli(fresh, ['task', 'recover', '--task-id', 'candidate',
+      '--candidate-repository', fixture.consumer.bare]).code, 0);
+    assert.equal(runCli(fresh, ['task', 'recover', '--task-id', 'candidate',
+      '--candidate-repository', fixture.bare]).code, 2);
+  } finally { fixture.cleanup(); }
+});
+
+test('dirty, stale epoch and denied push never ready or push main/tags', () => {
+  const fixture = setup();
+  try {
+    const args = claimCandidate(fixture);
+    const before = git(fixture.consumer.bare, 'show-ref');
+    fixture.consumer.write('dirty', 'dirty');
+    assert.equal(runCli(fixture.consumer.dir, args).code, 2);
+    fs.unlinkSync(path.join(fixture.consumer.dir, 'dirty'));
+    const stale = [...args];
+    stale[stale.indexOf('--claim-epoch') + 1] = '2';
+    assert.equal(runCli(fixture.consumer.dir, stale).code, 2);
+    const wrongOwner = [...args];
+    wrongOwner[wrongOwner.indexOf('--agent-id') + 1] = 'not-the-owner';
+    assert.equal(runCli(fixture.consumer.dir, wrongOwner).code, 2);
+    assert.equal(git(fixture.consumer.bare, 'show-ref'), before);
+    fs.writeFileSync(path.join(fixture.consumer.bare, 'hooks/pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const denied = runCli(fixture.consumer.dir, args);
+    assert.equal(denied.code, 2);
+    assert.equal(git(fixture.consumer.bare, 'show-ref'), before);
+    const board = JSON.parse(runCli(fixture.consumer.dir, ['task', 'list', '--json']).out);
+    assert.equal(board.priorities[0].status, 'active');
+  } finally { fixture.cleanup(); }
+});
+
+test('successful push without surviving remote confirmation never records ready', () => {
+  const fixture = setup();
+  try {
+    const args = claimCandidate(fixture);
+    // A server policy removes the private ref after accepting the push.
+    fs.writeFileSync(path.join(fixture.consumer.bare, 'hooks/post-receive'),
+      '#!/bin/sh\nwhile read old new ref; do git update-ref -d "$ref"; done\n', { mode: 0o755 });
+    const result = runCli(fixture.consumer.dir, args);
+    assert.equal(result.code, 2);
+    assert.match(result.err, /não confirmado/);
+    const board = JSON.parse(runCli(fixture.consumer.dir, ['task', 'list', '--json']).out);
+    assert.equal(board.priorities[0].status, 'active');
+    assert.equal(board.priorities[0].candidate, undefined);
+  } finally { fixture.cleanup(); }
+});
 
 test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
   const fixture = setup();
@@ -225,10 +314,20 @@ test('medição é reutilizada por quinze minutos sem novo input', () => {
     '--json',
   ]);
   assert.equal(first.code, 0, first.err);
-  const cache = path.join(fixture.root, 'cache', '.git', 'measurement-chat-vibecora.json');
+  const cache = path.join(fixture.root, 'cache.measurements', 'chat-vibecora.json');
   assert.equal(fs.existsSync(cache), true);
   const measured = JSON.parse(fs.readFileSync(cache, 'utf8'));
   assert.equal(measured.quotaRemainingPercent, 21);
+  const secondTask = JSON.parse(propose(fixture.consumer, 'task-b', 2).out);
+  runCli(fixture.consumer.dir, [
+    'task', 'approve', secondTask.proposalId, '--approval-ref', 'thread:b',
+  ]);
+  const second = runCli(fixture.consumer.dir, [
+    'task', 'next', ...agentArgs('agent-b'), '--json',
+  ]);
+  assert.equal(second.code, 0, second.err);
+  assert.equal(JSON.parse(second.out).measurement.cached, true);
+  assert.equal(JSON.parse(second.out).measurement.quotaRemainingPercent, 21);
   fixture.cleanup();
 });
 

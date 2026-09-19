@@ -1,3 +1,4 @@
+import { validateCandidate } from './candidate.mjs';
 import {
   normalizeAgentIdentity,
   sameAgent,
@@ -223,6 +224,9 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       }
       task.status = 'ready';
       task.candidateCommit = event.candidateCommit;
+      task.candidate = event.candidate == null ? null : validateCandidate(event.candidate, {
+        project, taskId: task.id, commit: event.candidateCommit,
+      });
       task.implementedBy = agent;
       task.readyAt = event.at;
     } else if (event.type === 'task_alternate_candidate') {
@@ -388,6 +392,8 @@ export function boardProjection(board) {
       claims: task.claims,
       implementedBy: task.implementedBy,
       readyAt: task.readyAt || null,
+      candidateCommit: task.candidateCommit || null,
+      candidate: task.candidate || null,
       dependencies: task.dependencies || [],
       blockers: task.blockers,
       roadmapRef: task.roadmapRef || null,
@@ -414,6 +420,8 @@ export function boardProjection(board) {
       implementedBy: task.implementedBy,
       readyAt: task.readyAt || null,
       doneAt: task.doneAt || null,
+      candidateCommit: task.candidateCommit || null,
+      candidate: task.candidate || null,
     })),
   };
 }

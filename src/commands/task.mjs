@@ -11,12 +11,14 @@ import {
 import {
   appendEventsAndPush,
   currentBoard,
+  ledgerCacheDir,
   newEvent,
   relativeCheckpointPath,
-  syncLedger,
+  withLedger,
 } from '../tasks/ledger.mjs';
 import { boardView, proposalImpact } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
+import { persistCandidate, recoverCandidate } from '../tasks/candidate.mjs';
 import {
   agentRef,
   resolveAgentIdentity,
@@ -32,6 +34,7 @@ const ACTIONS = new Set([
   'arm',
   'resume',
   'finish',
+  'recover',
   'block',
   'unblock',
 ]);
@@ -269,6 +272,7 @@ function nextTask(args, ctx, repo, tasks) {
   const measurement = readMeasurement({
     args,
     ledgerRepo: repo,
+    cacheFile: path.join(`${ledgerCacheDir(tasks)}.measurements`, `${tasks.project}.json`),
     project: tasks.project,
     cacheMinutes: tasks.measurementCacheMinutes,
   });
@@ -476,6 +480,14 @@ function finish(args, ctx, repo, tasks) {
   const claimEpoch = integer(args.claimEpoch, '--claim-epoch');
   if (!isClean(ctx.cwd)) throw new Error('A árvore precisa estar limpa antes de task finish.');
   const candidateCommit = head(ctx.cwd);
+  if (task.status === 'ready' && sameAgent(task.owner, agent) &&
+      task.claimEpoch === claimEpoch && task.candidateCommit === candidateCommit && task.candidate) {
+    const candidate = persistCandidate({
+      cwd: ctx.cwd, repository: task.candidate.repository,
+      project: tasks.project, taskId, commit: candidateCommit,
+    });
+    return { taskId, status: 'ready', candidateCommit, candidate };
+  }
   if (task.status === 'active' && !sameAgent(task.owner, agent)) {
     const claim = task.claims.find(
       (item) => sameAgent(item.agent, agent) && item.claimEpoch === claimEpoch,
@@ -516,6 +528,10 @@ function finish(args, ctx, repo, tasks) {
   ) {
     throw new Error('Somente o responsável atual pode marcar a tarefa como ready.');
   }
+  const candidate = persistCandidate({
+    cwd: ctx.cwd, repository: args.candidateRepository,
+    project: tasks.project, taskId, commit: candidateCommit,
+  });
   append({
     repo,
     tasks,
@@ -525,39 +541,51 @@ function finish(args, ctx, repo, tasks) {
         agent,
         claimEpoch,
         candidateCommit,
+        candidate,
       }),
     ],
     message: `task: deixa ${task.id} pronta`,
   });
-  return { taskId: task.id, status: 'ready', candidateCommit };
+  return { taskId: task.id, status: 'ready', candidateCommit, candidate };
 }
 
 export async function run(args, ctx) {
   const action = args._[0];
   if (!ACTIONS.has(action)) {
     console.error(
-      'Use vibecora-handoff task list|propose|approve|next|arm|resume|finish|block|unblock.',
+      'Use vibecora-handoff task list|propose|approve|next|arm|resume|finish|recover|block|unblock.',
     );
     return 2;
   }
   try {
     const tasks = taskConfig(ctx.config);
-    const repo = syncLedger(tasks);
-    let result;
-    const now = new Date();
-    if (action === 'list') {
-      result = boardView(currentBoard(repo, tasks.project), { now });
-    }
-    else if (action === 'propose') result = propose(args, repo, tasks);
-    else if (action === 'approve') result = approve(args, repo, tasks);
-    else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
-    else if (action === 'arm') result = arm(args, ctx, repo, tasks);
-    else if (action === 'resume') result = resume(args, ctx, repo, tasks);
-    else if (action === 'finish') result = finish(args, ctx, repo, tasks);
-    else result = setImpediment(args, repo, tasks, action === 'block');
+    return await withLedger(tasks, async (repo) => {
+      let result;
+      const now = new Date();
+      if (action === 'list') {
+        result = boardView(currentBoard(repo, tasks.project), { now });
+      }
+      else if (action === 'propose') result = propose(args, repo, tasks);
+      else if (action === 'approve') result = approve(args, repo, tasks);
+      else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
+      else if (action === 'arm') result = arm(args, ctx, repo, tasks);
+      else if (action === 'resume') result = resume(args, ctx, repo, tasks);
+      else if (action === 'finish') result = finish(args, ctx, repo, tasks);
+      else if (action === 'recover') {
+        const taskId = required(args.taskId, '--task-id');
+        const task = currentBoard(repo, tasks.project).tasks[taskId];
+        if (!task) throw new Error(`Tarefa inexistente: ${taskId}.`);
+        result = recoverCandidate({
+          cwd: ctx.cwd, candidate: task.candidate, project: tasks.project, taskId,
+          commit: task.candidateCommit,
+          repository: required(args.candidateRepository, '--candidate-repository'),
+        });
+      }
+      else result = setImpediment(args, repo, tasks, action === 'block');
 
-    print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project), now) : result, args.json);
-    return 0;
+      print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project), now) : result, args.json);
+      return 0;
+    });
   } catch (error) {
     console.error(error.message);
     return error.name === 'LedgerConflictError' ? 1 : 2;

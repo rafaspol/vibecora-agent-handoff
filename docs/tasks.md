@@ -71,7 +71,7 @@ Arquivos de credencial são recusados e o artefato cifrado não pode exceder
 ## Fechamento
 
 ```bash
-# árvore limpa; registra o HEAD candidato
+# árvore limpa; persiste HEAD no origin (ou --candidate-repository <repo>)
 npx vibecora-handoff task finish --task-id <id> \
   --agent-type <tipo> --agent-id <id> --claim-epoch <n>
 
@@ -82,11 +82,87 @@ npx vibecora-handoff task finish --task-id <id> --integrated
 `ready` significa concluída e verificada, aguardando integração. `done` exige
 ancestralidade Git verificável.
 
+Antes de registrar `ready`, `finish` envia apenas
+`refs/vibecora/candidates/<projeto>/<tarefa>/<SHA>` ao repositório candidato e
+confirma o SHA remoto. Não usa force, não envia main nem tags. O destino padrão
+é a URL de push de origin; `--candidate-repository` permite salvar em outro
+repositório. Use um **repositório privado** com retenção dessas refs e acesso
+para os próximos agentes: o namespace não é controle de acesso. A URL gravada
+não pode conter senha, token, query ou usuário HTTPS; autentique por credential
+helper/SSH. Checkpoints e suas chaves não participam deste fluxo.
+Falha de push/confirmação não registra ready. Se o ledger conflitar depois do
+push, a ref pode ficar órfã; repetir com o claim ainda vigente reutiliza a
+mesma ref sem sobrescrever. Repetir um finish já ready com o mesmo responsável,
+época e HEAD confirma a ref e não duplica o evento.
+
+Após perder o clone original, em um clone novo com a configuração do mesmo
+ledger/projeto e acesso ao repositório salvo:
+
+```bash
+npx vibecora-handoff task list --json
+# confira candidate.repository e informe exatamente esse destino:
+npx vibecora-handoff task recover --task-id <id> \
+  --candidate-repository <repo-salvo> --json
+# recover só busca e verifica; não altera árvore, branch, claim nem ledger.
+git switch -c integrar-candidato <candidateCommit>
+# execute testes/revisão e integre preservando o commit candidato em main
+npx vibecora-handoff task finish --task-id <id> --integrated
+```
+
+O agente da próxima tarefa pode usar esse clone/repositório salvo para integrar
+o candidato antes de `task next`. A recuperação valida projeto, tarefa, URL,
+namespace e hash antes de invocar Git para o candidato, confirma a ref remota
+e verifica o commit buscado. Eventos antigos sem `candidate` continuam legíveis,
+mas são legados **não recuperáveis por este comando**; um SHA local não vira
+garantia de persistência. Candidatos alternativos mantêm o comportamento anterior.
+
 Se um agente antigo terminar depois da transferência, ele informa seu
 `--claim-epoch`; o resultado é preservado como candidato alternativo com o
 merge-base calculado, sem substituir o responsável atual.
 
 ## Configuração
+
+### Isolamento e ciclo de vida do ledger
+
+Cada operação usa um clone temporário privado, inclusive `list` e `resume`
+sem claim. `cacheDir` (ou o caminho derivado de `VIBE_CORA_TASK_CACHE`) é
+somente um namespace: o clone fica em um diretório irmão
+`<cacheDir>.operation-<sufixo aleatório>`, criado atomicamente. Um cache antigo
+ou conteúdo do chamador nesse caminho não é reutilizado, limpo ou sobrescrito.
+Isso evita também corridas durante o primeiro clone. O custo é um clone por
+operação, sem aceleração por cache compartilhado.
+
+A pequena cache de medições permanece separada em
+`<cacheDir>.measurements/<projeto>.json`, com substituição atômica de cada
+amostra completa. Ela preserva a reutilização por quinze minutos, mas não
+contém checkout, eventos nem checkpoints e não participa da transação Git.
+Escritas concorrentes usam a última substituição concluída. Interrupção durante
+uma escrita pode deixar um arquivo `.tmp`, removível manualmente quando não
+houver comandos ativos; ele nunca é lido como amostra.
+
+A revisão capturada não recebe fetch/reset durante a operação. Leituras,
+checkpoint, redução e commit usam o mesmo snapshot; o push envia o SHA exato
+do commit, sem force. Escritores concorrentes partindo da mesma revisão têm
+no máximo um push aceito. Rejeição não gera confirmação de sucesso nem retry
+automático. Uma falha de transporte pode ocorrer depois da aceitação remota:
+o erro informa o SHA e é necessário consultar o ledger antes de repetir.
+
+O CLI mantém o snapshot até concluir a operação e imprimir o resultado, e
+o remove em `finally`, tanto em sucesso quanto em erro. `withLedger(config,
+callback)` também aguarda callbacks assíncronos. Falha na remoção produz aviso
+com o caminho, sem transformar um push confirmado em falha. A API de baixo
+nível `syncLedger(config)` continua síncrona e retorna uma string, mas agora
+sempre retorna um caminho privado novo: o chamador deve removê-lo ao terminar,
+ou preferir `withLedger`. Não se deve compartilhar esse caminho entre operações.
+
+Interrupções que impedem `finally` (inclusive SIGKILL, encerramento por sinal
+ou queda do host) podem deixar clones órfãos. Não há lock, identificação por
+PID, coleta automática nem reutilização desses diretórios; portanto um órfão
+não bloqueia nem altera operações futuras e reutilização de PID é irrelevante.
+Para limpeza manual, primeiro encerre os comandos que usam esse namespace e
+remova apenas os diretórios `.operation-*` correspondentes. Não apague snapshots
+de operações ativas. Um processo interrompido após o push também pode não ter
+exibido confirmação: consulte o histórico remoto antes de tentar novamente.
 
 ```jsonc
 {
