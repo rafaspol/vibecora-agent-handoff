@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 function percent(value, label) {
   if (value == null || value === '' || value === 'unknown') return null;
@@ -18,12 +19,13 @@ export function readMeasurement({
   args,
   ledgerRepo,
   project,
+  cacheFile,
   cacheMinutes = 15,
   now = Date.now(),
 }) {
   const explicit =
     args.quotaRemaining !== undefined || args.contextRemaining !== undefined;
-  const file = measurementCachePath(ledgerRepo, project);
+  const file = cacheFile || measurementCachePath(ledgerRepo, project);
 
   if (!explicit && fs.existsSync(file)) {
     try {
@@ -44,7 +46,16 @@ export function readMeasurement({
     source: args.measurementSource || (explicit ? 'provided-by-host' : 'unknown'),
     cached: false,
   };
-  fs.writeFileSync(file, `${JSON.stringify(measured)}\n`, { mode: 0o600 });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Measurement reuse is independent of the ledger transaction. Readers see
+  // a complete old or new sample, never a partially overwritten JSON file.
+  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(measured)}\n`, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
   return measured;
 }
 

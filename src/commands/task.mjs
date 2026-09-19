@@ -11,9 +11,10 @@ import {
 import {
   appendEventsAndPush,
   currentBoard,
+  ledgerCacheDir,
   newEvent,
   relativeCheckpointPath,
-  syncLedger,
+  withLedger,
 } from '../tasks/ledger.mjs';
 import { boardView, proposalImpact } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
@@ -269,6 +270,7 @@ function nextTask(args, ctx, repo, tasks) {
   const measurement = readMeasurement({
     args,
     ledgerRepo: repo,
+    cacheFile: path.join(`${ledgerCacheDir(tasks)}.measurements`, `${tasks.project}.json`),
     project: tasks.project,
     cacheMinutes: tasks.measurementCacheMinutes,
   });
@@ -542,22 +544,23 @@ export async function run(args, ctx) {
   }
   try {
     const tasks = taskConfig(ctx.config);
-    const repo = syncLedger(tasks);
-    let result;
-    const now = new Date();
-    if (action === 'list') {
-      result = boardView(currentBoard(repo, tasks.project), { now });
-    }
-    else if (action === 'propose') result = propose(args, repo, tasks);
-    else if (action === 'approve') result = approve(args, repo, tasks);
-    else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
-    else if (action === 'arm') result = arm(args, ctx, repo, tasks);
-    else if (action === 'resume') result = resume(args, ctx, repo, tasks);
-    else if (action === 'finish') result = finish(args, ctx, repo, tasks);
-    else result = setImpediment(args, repo, tasks, action === 'block');
+    return await withLedger(tasks, async (repo) => {
+      let result;
+      const now = new Date();
+      if (action === 'list') {
+        result = boardView(currentBoard(repo, tasks.project), { now });
+      }
+      else if (action === 'propose') result = propose(args, repo, tasks);
+      else if (action === 'approve') result = approve(args, repo, tasks);
+      else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
+      else if (action === 'arm') result = arm(args, ctx, repo, tasks);
+      else if (action === 'resume') result = resume(args, ctx, repo, tasks);
+      else if (action === 'finish') result = finish(args, ctx, repo, tasks);
+      else result = setImpediment(args, repo, tasks, action === 'block');
 
-    print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project), now) : result, args.json);
-    return 0;
+      print(action === 'list' && !args.json ? formatList(currentBoard(repo, tasks.project), now) : result, args.json);
+      return 0;
+    });
   } catch (error) {
     console.error(error.message);
     return error.name === 'LedgerConflictError' ? 1 : 2;

@@ -90,29 +90,45 @@ export function ledgerCacheDir(tasksConfig) {
 export function syncLedger(tasksConfig) {
   if (!tasksConfig.ledger) throw new Error('tasks.ledger não configurado.');
   const branch = tasksConfig.branch || 'main';
-  const repo = ledgerCacheDir(tasksConfig);
-  fs.mkdirSync(path.dirname(repo), { recursive: true });
-
-  if (!fs.existsSync(path.join(repo, '.git'))) {
-    fs.rmSync(repo, { recursive: true, force: true });
+  const cache = ledgerCacheDir(tasksConfig);
+  fs.mkdirSync(path.dirname(cache), { recursive: true });
+  // The configured cache is a namespace, never a mutable shared checkout.
+  // Keep the string-returning API; direct callers own this directory's lifetime.
+  const repo = fs.mkdtempSync(`${cache}.operation-`);
+  try {
     git(['clone', '--branch', branch, '--single-branch', tasksConfig.ledger, repo], {
       cwd: path.dirname(repo),
     });
-  } else {
-    git(['remote', 'set-url', 'origin', tasksConfig.ledger], { cwd: repo });
-    git(['fetch', '--prune', 'origin', branch], { cwd: repo });
-    git(['checkout', '-B', branch, `origin/${branch}`], { cwd: repo });
-    git(['reset', '--hard', `origin/${branch}`], { cwd: repo });
-    git(['clean', '-fd'], { cwd: repo });
+    git(['config', 'user.name', tasksConfig.gitUserName || 'vibecora-task-system'], {
+      cwd: repo,
+    });
+    git(
+      ['config', 'user.email', tasksConfig.gitUserEmail || 'tasks@vibecora.invalid'],
+      { cwd: repo },
+    );
+    return repo;
+  } catch (error) {
+    cleanupSnapshot(repo);
+    throw error;
   }
-  git(['config', 'user.name', tasksConfig.gitUserName || 'vibecora-task-system'], {
-    cwd: repo,
-  });
-  git(
-    ['config', 'user.email', tasksConfig.gitUserEmail || 'tasks@vibecora.invalid'],
-    { cwd: repo },
-  );
-  return repo;
+}
+
+function cleanupSnapshot(repo) {
+  try {
+    fs.rmSync(repo, { recursive: true, force: true });
+  } catch (error) {
+    // Cleanup must not turn a confirmed push into an apparent failed claim.
+    console.error(`Aviso: snapshot não removido (${repo}): ${error.message}`);
+  }
+}
+
+export async function withLedger(tasksConfig, operation) {
+  const repo = syncLedger(tasksConfig);
+  try {
+    return await operation(repo);
+  } finally {
+    cleanupSnapshot(repo);
+  }
 }
 
 export function newEvent(type, fields = {}) {
@@ -143,14 +159,15 @@ export function appendEventsAndPush({
   const paths = projectPaths(repo, project);
   git(['add', paths.root], { cwd: repo });
   git(['commit', '-m', message], { cwd: repo });
-  const pushed = git(['push', 'origin', `HEAD:${branch}`], {
+  const commit = git(['rev-parse', 'HEAD'], { cwd: repo });
+  const pushed = git(['push', 'origin', `${commit}:refs/heads/${branch}`], {
     cwd: repo,
     allowFailure: true,
   });
   if (pushed === null) {
-    git(['fetch', 'origin', branch], { cwd: repo, allowFailure: true });
-    git(['reset', '--hard', `origin/${branch}`], { cwd: repo, allowFailure: true });
-    throw new LedgerConflictError();
+    throw new LedgerConflictError(
+      `Push não confirmado para ${commit}; possível conflito ou falha de transporte. Consulte o ledger antes de repetir.`,
+    );
   }
   return board;
 }

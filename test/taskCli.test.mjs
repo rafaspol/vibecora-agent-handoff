@@ -58,6 +58,11 @@ function setup() {
     bare,
     consumer,
     cleanup() {
+      assert.deepEqual(
+        fs.readdirSync(root).filter(name => name.startsWith('cache.operation-')),
+        [],
+        'task commands must dispose their ledger snapshots, including reads and failures',
+      );
       consumer.cleanup();
       fs.rmSync(root, { recursive: true, force: true });
     },
@@ -225,10 +230,20 @@ test('medição é reutilizada por quinze minutos sem novo input', () => {
     '--json',
   ]);
   assert.equal(first.code, 0, first.err);
-  const cache = path.join(fixture.root, 'cache', '.git', 'measurement-chat-vibecora.json');
+  const cache = path.join(fixture.root, 'cache.measurements', 'chat-vibecora.json');
   assert.equal(fs.existsSync(cache), true);
   const measured = JSON.parse(fs.readFileSync(cache, 'utf8'));
   assert.equal(measured.quotaRemainingPercent, 21);
+  const secondTask = JSON.parse(propose(fixture.consumer, 'task-b', 2).out);
+  runCli(fixture.consumer.dir, [
+    'task', 'approve', secondTask.proposalId, '--approval-ref', 'thread:b',
+  ]);
+  const second = runCli(fixture.consumer.dir, [
+    'task', 'next', ...agentArgs('agent-b'), '--json',
+  ]);
+  assert.equal(second.code, 0, second.err);
+  assert.equal(JSON.parse(second.out).measurement.cached, true);
+  assert.equal(JSON.parse(second.out).measurement.quotaRemainingPercent, 21);
   fixture.cleanup();
 });
 
