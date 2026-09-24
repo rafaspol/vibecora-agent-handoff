@@ -22,6 +22,11 @@ npx vibecora-handoff task propose add \
 npx vibecora-handoff task approve <proposal-id> \
   --approval-ref "codex-thread:<referência-estável>"
 
+# ou a recusa, com o motivo e onde o condutor a decidiu
+npx vibecora-handoff task reject <proposal-id> \
+  --reason "Duplica outra tarefa" \
+  --rejection-ref "codex-thread:<referência-estável>"
+
 # reivindica a primeira tarefa executável
 npx vibecora-handoff task next --agent-type codex --agent-id <instância> \
   --quota-remaining 18 --context-remaining unknown
@@ -30,6 +35,20 @@ npx vibecora-handoff task next --agent-type codex --agent-id <instância> \
 `task propose remove` exige `--consequence`. `task propose reorder` exige
 `--suggested-rank`. Nenhuma das duas altera a fila antes de `task approve`.
 Dependências são repetidas com `--depends-on`.
+
+`task reject` é a outra resposta à mesma proposta, e também só registra decisão
+do condutor. Exige `--reason` e `--rejection-ref`; grava `proposal_rejected`
+com autor, referência, motivo e data, sem apagar nada. A inclusão recusada leva
+o rascunho a `rejected`, que sai dos rascunhos e aparece no histórico; recusar
+remoção ou reordenação deixa a fila como estava. Proposta decidida, aprovada
+ou recusada, não aceita outra decisão, e o id de uma tarefa recusada não volta
+a ser proposto: uma nova tentativa usa id novo. `task list` mostra as recusas
+em seção própria.
+
+**Compatibilidade.** Um reducer anterior à 0.4.1 recusa evento desconhecido, e
+um único `proposal_rejected` no ledger derruba a leitura da fila em todo clone
+que ainda estiver numa versão anterior. Atualize os consumidores do ledger
+antes da primeira recusa.
 
 A identidade vem primeiro de `--agent-type/--agent-id`, depois de
 `VIBECORA_AGENT_TYPE/VIBECORA_AGENT_ID`. No Codex, `CODEX_THREAD_ID` é detectado
@@ -46,7 +65,8 @@ Isso não muda a posição da tarefa.
 
 ## Estados
 
-`draft` → `approved` → `active` → `ready` → `done`. Uma remoção aprovada leva
+`draft` → `approved` → `active` → `ready` → `done`; `draft` → `rejected` quando a
+inclusão é recusada. Uma remoção aprovada leva
 a `removed` sem apagar o histórico. Bloqueio é derivado de dependências não
 concluídas ou de impedimento registrado; não muda a prioridade.
 

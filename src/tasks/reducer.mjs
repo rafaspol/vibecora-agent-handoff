@@ -13,6 +13,7 @@ const TASK_STATES = new Set([
   'ready',
   'done',
   'removed',
+  'rejected',
 ]);
 
 export function emptyBoard(project) {
@@ -122,6 +123,35 @@ function applyApproval(board, proposal, event) {
   throw new Error(`Tipo de proposta desconhecido: ${proposal.kind}.`);
 }
 
+// A recusa é a outra resposta do condutor a uma proposta: fecha a proposta com
+// motivo, autor e referência, sem apagar nada. Um rascunho recusado sai dos
+// rascunhos e vai para o histórico; recusar remoção ou reordenação deixa a
+// fila exatamente como estava.
+function applyRejection(board, proposal, event) {
+  if (proposal.status !== 'pending') {
+    throw new Error(`A proposta ${proposal.id} já foi decidida.`);
+  }
+  if (!event.reason) {
+    throw new Error(`A recusa de ${proposal.id} precisa de motivo.`);
+  }
+  proposal.status = 'rejected';
+  proposal.rejection = {
+    by: event.rejectedBy,
+    ref: event.rejectionRef,
+    reason: event.reason,
+    at: event.at,
+  };
+
+  if (proposal.kind === 'add') {
+    const task = requireTask(board, proposal.taskId);
+    if (task.status !== 'draft') {
+      throw new Error(`A tarefa ${task.id} não está em rascunho.`);
+    }
+    task.status = 'rejected';
+    task.rejection = proposal.rejection;
+  }
+}
+
 export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
   const board = emptyBoard(project);
   const eventIds = new Set();
@@ -191,6 +221,8 @@ export function reduceTaskEvents(events, { project = 'unknown' } = {}) {
       };
     } else if (event.type === 'proposal_approved') {
       applyApproval(board, requireProposal(board, event.proposalId), event);
+    } else if (event.type === 'proposal_rejected') {
+      applyRejection(board, requireProposal(board, event.proposalId), event);
     } else if (event.type === 'task_claimed') {
       const task = requireTask(board, event.taskId);
       const agent = normalizeAgentIdentity(event.agent);
@@ -321,8 +353,11 @@ export function boardView(board, { now = null } = {}) {
     .filter((proposal) => proposal.status === 'pending')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const history = Object.values(board.tasks)
-    .filter((task) => ['done', 'removed'].includes(task.status))
+    .filter((task) => ['done', 'removed', 'rejected'].includes(task.status))
     .map((task) => withAge(task, now));
+  const rejectedProposals = Object.values(board.proposals)
+    .filter((proposal) => proposal.status === 'rejected')
+    .sort((a, b) => a.rejection.at.localeCompare(b.rejection.at));
   const suggestedChanges = pendingProposals.map((proposal) => ({
     ...proposal,
     impact: proposalImpact(board, proposal),
@@ -338,6 +373,7 @@ export function boardView(board, { now = null } = {}) {
     pendingProposals,
     suggestedChanges,
     history,
+    rejectedProposals,
     recommendation:
       pendingProposals.length > 0
         ? 'Há mudanças aguardando aprovação; a fila vigente permanece inalterada.'
@@ -426,8 +462,20 @@ export function boardProjection(board) {
       integration: task.integration || null,
       candidateCommit: task.candidateCommit || null,
       candidate: task.candidate || null,
+      rejection: task.rejection || null,
+    })),
+    rejectedProposals: view.rejectedProposals.map((proposal) => ({
+      id: proposal.id,
+      kind: proposal.kind,
+      taskId: proposal.taskId,
+      rejection: proposal.rejection,
     })),
   };
+}
+
+export function rejectionSummary(proposal) {
+  const { by, ref, reason, at } = proposal.rejection;
+  return `${proposal.kind} ${proposal.taskId} recusada em ${at.slice(0, 10)} por ${by} (${ref}): ${reason}`;
 }
 
 function originSummary(task) {
@@ -468,6 +516,11 @@ export function renderBoardMarkdown(board) {
   if (view.history.length === 0) lines.push('_Nenhuma tarefa encerrada._');
   for (const task of view.history) {
     lines.push(`- **${task.id} — ${task.title}** · ${task.status} · ${originSummary(task)}${task.implementedBy ? ` · implementada por ${shortAgentRef(task.implementedBy)}` : ''}`);
+  }
+  lines.push('', '## Recusas', '');
+  if (view.rejectedProposals.length === 0) lines.push('_Nenhuma proposta recusada._');
+  for (const proposal of view.rejectedProposals) {
+    lines.push(`- \`${proposal.id}\` · ${rejectionSummary(proposal)}`);
   }
   lines.push('', `Mudança sugerida: ${view.recommendation}`, '');
   return lines.join('\n');

@@ -16,7 +16,7 @@ import {
   relativeCheckpointPath,
   withLedger,
 } from '../tasks/ledger.mjs';
-import { boardView, proposalImpact } from '../tasks/reducer.mjs';
+import { boardView, proposalImpact, rejectionSummary } from '../tasks/reducer.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
 import { persistCandidate, recoverCandidate } from '../tasks/candidate.mjs';
 import { verifyIntegration } from '../tasks/integration.mjs';
@@ -31,6 +31,7 @@ const ACTIONS = new Set([
   'list',
   'propose',
   'approve',
+  'reject',
   'next',
   'arm',
   'resume',
@@ -125,6 +126,11 @@ function formatList(board, now = new Date()) {
   if (view.history.length === 0) lines.push('  vazio');
   for (const task of view.history) {
     lines.push(`  ${task.id} — ${task.title} [${task.status}] · origem ${originSummary(task)}${task.implementedBy ? ` · implementada por ${shortAgentRef(task.implementedBy)}` : ''}`);
+  }
+  lines.push('', 'Recusas:');
+  if (view.rejectedProposals.length === 0) lines.push('  nenhuma');
+  for (const proposal of view.rejectedProposals) {
+    lines.push(`  ${proposal.id}: ${rejectionSummary(proposal)}`);
   }
   return lines.join('\n');
 }
@@ -225,6 +231,31 @@ function approve(args, repo, tasks) {
     message: `task: aprova ${proposal.kind} ${proposal.taskId}`,
   });
   return { proposalId, impact, board: boardView(next) };
+}
+
+// Registra a recusa do condutor, como `approve` registra o sim: o agente não
+// recusa por conta própria, e a referência aponta onde a decisão foi tomada.
+function reject(args, repo, tasks) {
+  const proposalId = required(args._[1] || args.proposalId, 'proposal id');
+  const board = currentBoard(repo, tasks.project);
+  const proposal = board.proposals[proposalId];
+  if (!proposal) throw new Error(`Proposta inexistente: ${proposalId}.`);
+  if (proposal.status !== 'pending') {
+    throw new Error(`A proposta ${proposalId} já foi decidida.`);
+  }
+  const event = newEvent('proposal_rejected', {
+    proposalId,
+    rejectedBy: tasks.conductor || '@rafaspol',
+    rejectionRef: required(args.rejectionRef, '--rejection-ref'),
+    reason: required(args.reason, '--reason'),
+  });
+  const next = append({
+    repo,
+    tasks,
+    events: [event],
+    message: `task: recusa ${proposal.kind} ${proposal.taskId}`,
+  });
+  return { proposalId, rejection: next.proposals[proposalId].rejection, board: boardView(next) };
 }
 
 function checkpointTemp() {
@@ -550,7 +581,7 @@ export async function run(args, ctx) {
   const action = args._[0];
   if (!ACTIONS.has(action)) {
     console.error(
-      'Use vibecora-handoff task list|propose|approve|next|arm|resume|finish|recover|block|unblock.',
+      'Use vibecora-handoff task list|propose|approve|reject|next|arm|resume|finish|recover|block|unblock.',
     );
     return 2;
   }
@@ -564,6 +595,7 @@ export async function run(args, ctx) {
       }
       else if (action === 'propose') result = propose(args, repo, tasks);
       else if (action === 'approve') result = approve(args, repo, tasks);
+      else if (action === 'reject') result = reject(args, repo, tasks);
       else if (action === 'next') result = nextTask(args, ctx, repo, tasks);
       else if (action === 'arm') result = arm(args, ctx, repo, tasks);
       else if (action === 'resume') result = resume(args, ctx, repo, tasks);
