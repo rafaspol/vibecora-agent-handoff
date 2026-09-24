@@ -16,6 +16,7 @@ import {
   syncLedger,
 } from '../tasks/ledger.mjs';
 import { boardView, proposalImpact, rejectionSummary } from '../tasks/reducer.mjs';
+import { approvalNote, approvalProvenance } from '../tasks/approvalProvenance.mjs';
 import { readMeasurement, resourceDecision } from '../tasks/measurements.mjs';
 import {
   agentRef,
@@ -40,6 +41,15 @@ const ACTIONS = new Set([
 function required(value, label) {
   if (value == null || value === '') throw new Error(`${label} é obrigatório.`);
   return value;
+}
+
+// A identidade de quem registra uma aprovação, quando informada. Ausência não
+// é erro aqui (o condutor pode rodar o comando), mas identidade pela metade
+// continua sendo.
+function optionalAgent(args, env = process.env) {
+  const informada = [args.agentType, args.agentId, env.VIBECORA_AGENT_TYPE,
+    env.VIBECORA_AGENT_ID, env.CODEX_THREAD_ID].some((v) => v != null && v !== '');
+  return informada ? resolveAgentIdentity(args, env) : null;
 }
 
 function integer(value, label) {
@@ -81,8 +91,9 @@ function formatList(board, now = new Date()) {
           task.blockers.impediment,
         ].filter(Boolean).join(', ')}`
       : '';
+    const note = approvalNote(task.approval);
     lines.push(
-      `  ${task.rank}. ${task.id} — ${task.title} [${task.status}] · origem ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${blocker}`,
+      `  ${task.rank}. ${task.id} — ${task.title} [${task.status}] · origem ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${note ? ` · ${note}` : ''}${blocker}`,
     );
   }
   lines.push(
@@ -215,10 +226,21 @@ function approve(args, repo, tasks) {
   const proposal = board.proposals[proposalId];
   if (!proposal) throw new Error(`Proposta inexistente: ${proposalId}.`);
   const impact = proposalImpact(board, proposal);
+  const approvalRef = required(args.approvalRef, '--approval-ref');
+  // Quem registra, quando se sabe. Sem identidade a aprovação continua
+  // possível, mas sai "registrante não identificado" — nunca como se fosse do
+  // condutor.
   const event = newEvent('proposal_approved', {
     proposalId,
     approvedBy: tasks.conductor || '@rafaspol',
-    approvalRef: required(args.approvalRef, '--approval-ref'),
+    approvalRef,
+    ...approvalProvenance({
+      ref: approvalRef,
+      summary: args.approvalSummary,
+      recordedBy: optionalAgent(args),
+      ledgerRoot: repo,
+      delegationRefs: tasks.delegationRefs || [],
+    }),
   });
   const next = append({
     repo,

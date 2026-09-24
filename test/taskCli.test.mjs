@@ -122,7 +122,7 @@ test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
     'approve',
     proposal.proposalId,
     '--approval-ref',
-    'thread:approved-by-rafaspol',
+    'thread:approved-by-rafaspol', '--approval-summary', 'aprovado no teste',
     '--json',
   ]);
   assert.equal(approved.code, 0, approved.err);
@@ -168,7 +168,7 @@ test('CLI recusa proposta com motivo e referência, e a recusa aparece no task l
   );
 
   const again = runCli(fixture.consumer.dir, [
-    'task', 'approve', proposal.proposalId, '--approval-ref', 'thread:mudou-de-ideia',
+    'task', 'approve', proposal.proposalId, '--approval-ref', 'thread:mudou-de-ideia', '--approval-summary', 'aprovado no teste',
   ]);
   assert.equal(again.code, 2);
   assert.match(again.err, /já foi decidida/);
@@ -183,7 +183,7 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
     'approve',
     taskB.proposalId,
     '--approval-ref',
-    'thread:b',
+    'thread:b', '--approval-summary', 'aprovado no teste',
   ]);
   const taskA = JSON.parse(propose(fixture.consumer, 'task-a', 1, ['task-b']).out);
   runCli(fixture.consumer.dir, [
@@ -191,7 +191,7 @@ test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () =
     'approve',
     taskA.proposalId,
     '--approval-ref',
-    'thread:a',
+    'thread:a', '--approval-summary', 'aprovado no teste',
   ]);
 
   const high = runCli(fixture.consumer.dir, [
@@ -257,7 +257,7 @@ test('medição é reutilizada por quinze minutos sem novo input', () => {
     'approve',
     task.proposalId,
     '--approval-ref',
-    'thread:a',
+    'thread:a', '--approval-summary', 'aprovado no teste',
   ]);
   const first = runCli(fixture.consumer.dir, [
     'task',
@@ -283,7 +283,7 @@ test('task resume transfere o claim e restaura em worktree isolada', () => {
     'approve',
     task.proposalId,
     '--approval-ref',
-    'thread:a',
+    'thread:a', '--approval-summary', 'aprovado no teste',
   ]);
   fixture.consumer.write('notes/continuar.txt', 'estado preventivo\n');
   const claimed = runCli(fixture.consumer.dir, [
@@ -369,7 +369,7 @@ test('task block e unblock registram impedimento sem mudar a posição', () => {
     'approve',
     task.proposalId,
     '--approval-ref',
-    'thread:a',
+    'thread:a', '--approval-summary', 'aprovado no teste',
   ]);
   const blocked = runCli(fixture.consumer.dir, [
     'task',
@@ -433,5 +433,66 @@ test('task list --json lido por pipe sai inteiro acima de 64 KB', () => {
   assert.equal(listed.code, 0, listed.err);
   assert.ok(Buffer.byteLength(listed.out) > 65536, `saída de ${Buffer.byteLength(listed.out)} bytes`);
   assert.equal(JSON.parse(listed.out).drafts.length, 200);
+  fixture.cleanup();
+});
+
+test('approve grava quem registrou e a base, e a listagem diz que foi declarada', () => {
+  const fixture = setup();
+  const proposal = JSON.parse(propose(fixture.consumer, 'task-a', 1).out);
+
+  const semResumo = runCli(fixture.consumer.dir, [
+    'task', 'approve', proposal.proposalId, '--approval-ref', 'rafaspol:quiz-1',
+    ...agentArgs('registrador'),
+  ]);
+  assert.notEqual(semResumo.code, 0);
+  assert.match(semResumo.err, /--approval-summary/);
+
+  const aprovado = runCli(fixture.consumer.dir, [
+    'task', 'approve', proposal.proposalId, '--approval-ref', 'rafaspol:quiz-1',
+    '--approval-summary', 'Aceito', ...agentArgs('registrador'), '--json',
+  ]);
+  assert.equal(aprovado.code, 0, aprovado.err);
+  const tarefa = JSON.parse(aprovado.out).board.priorities[0];
+  assert.equal(tarefa.approval.basis, 'conversation');
+  assert.deepEqual(tarefa.approval.recordedBy, { type: 'codex', id: 'registrador' });
+  assert.equal(tarefa.approval.summary, 'Aceito');
+  assert.equal(tarefa.approval.legacy, false);
+
+  const lista = runCli(fixture.consumer.dir, ['task', 'list']);
+  assert.match(lista.out, /task-a .* · aprovação declarada \(conversa; codex:registra\)/);
+  fixture.cleanup();
+});
+
+test('approve por documento confere o arquivo no ledger e não ressalva', () => {
+  const fixture = setup();
+  const proposal = JSON.parse(propose(fixture.consumer, 'task-a', 1).out);
+
+  const ausente = runCli(fixture.consumer.dir, [
+    'task', 'approve', proposal.proposalId,
+    '--approval-ref', 'ledger:projects/chat-vibecora/approvals/a.md',
+  ]);
+  assert.notEqual(ausente.code, 0);
+  assert.match(ausente.err, /não existe no ledger/);
+
+  // O documento entra no ledger como qualquer registro do condutor.
+  const seed = path.join(fixture.root, 'seed');
+  git(seed, 'pull', '-q', 'origin', 'main');
+  fs.mkdirSync(path.join(seed, 'projects/chat-vibecora/approvals'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects/chat-vibecora/approvals/a.md'), 'aprovado\n');
+  git(seed, 'add', '.');
+  git(seed, 'commit', '-qm', 'aprovação');
+  git(seed, 'push', '-q', 'origin', 'main');
+
+  const aprovado = runCli(fixture.consumer.dir, [
+    'task', 'approve', proposal.proposalId,
+    '--approval-ref', 'ledger:projects/chat-vibecora/approvals/a.md', '--json',
+  ]);
+  assert.equal(aprovado.code, 0, aprovado.err);
+  const tarefa = JSON.parse(aprovado.out).board.priorities[0];
+  assert.equal(tarefa.approval.basis, 'document');
+  assert.equal(tarefa.approval.recordedBy, null);
+
+  const lista = runCli(fixture.consumer.dir, ['task', 'list']);
+  assert.doesNotMatch(lista.out, /aprovação declarada/);
   fixture.cleanup();
 });

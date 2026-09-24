@@ -54,6 +54,7 @@ function parseArgs(argv) {
     ['--reason', 'reason'],
     ['--consequence', 'consequence'],
     ['--approval-ref', 'approvalRef'],
+    ['--approval-summary', 'approvalSummary'],
     ['--rejection-ref', 'rejectionRef'],
     ['--owner', 'owner'],
     ['--agent-type', 'agentType'],
