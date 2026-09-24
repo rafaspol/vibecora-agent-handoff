@@ -11,6 +11,18 @@ acontece sozinho.
 npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
 ```
 
+## [0.4.2] — 2026-09-24
+
+Construída sobre a 0.4.1, na mesma linha.
+
+### Corrigido
+
+- A CLI saía com `process.exit` logo depois de escrever, e em pipe o Node
+  escreve de forma assíncrona: `task list --json | …` entregava só os
+  primeiros 64 KB e virava JSON inválido. Agora a saída espera `stdout` e
+  `stderr` confirmarem a escrita; um leitor que fecha cedo (`| head`) não
+  prende o processo, e os códigos de saída não mudam.
+
 ## [0.4.1] — 2026-09-24
 
 Construída sobre a 0.4.0. Não inclui o que a `main` acumulou depois da 0.4.0

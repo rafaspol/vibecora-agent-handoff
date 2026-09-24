@@ -115,10 +115,27 @@ async function main() {
   return typeof code === 'number' ? code : 0;
 }
 
+// Em pipe, stdout e stderr são assíncronos no Node: `process.exit` direto
+// mata o processo com o buffer ainda por esvaziar, e quem lê `task list
+// --json | …` recebia os primeiros 64 KB. Sair só depois de os dois streams
+// confirmarem a escrita; um leitor que já fechou (EPIPE, `| head`) não prende
+// a saída.
+function exitAfterFlush(code) {
+  let pending = 2;
+  const done = () => {
+    pending -= 1;
+    if (pending === 0) process.exit(code);
+  };
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.once('error', () => process.exit(code));
+    stream.write('', done);
+  }
+}
+
 main().then(
-  (code) => process.exit(code),
+  (code) => exitAfterFlush(code),
   (err) => {
     console.error(err?.stack || String(err));
-    process.exit(2);
+    exitAfterFlush(2);
   },
 );
