@@ -398,3 +398,40 @@ test('task block e unblock registram impedimento sem mudar a posição', () => {
   assert.equal(after.nextExecutable.id, 'task-a');
   fixture.cleanup();
 });
+
+test('task list --json lido por pipe sai inteiro acima de 64 KB', () => {
+  const fixture = setup();
+  const seed = path.join(fixture.root, 'seed');
+  const project = path.join(seed, 'projects', 'chat-vibecora');
+  fs.mkdirSync(project, { recursive: true });
+  const long = 'objetivo longo '.repeat(40);
+  const events = Array.from({ length: 200 }, (_, index) => ({
+    id: `seed-${index}`,
+    type: 'task_drafted',
+    at: '2026-09-24T00:00:00Z',
+    agent: { type: 'codex', id: 'seed-agent' },
+    task: {
+      id: `tarefa-${index}`,
+      title: `Tarefa ${index}`,
+      objective: `${long}${index}`,
+      doneWhen: `tarefa-${index} verificada`,
+      dependencies: [],
+      suggestedRank: 1,
+      roadmapRef: null,
+    },
+    proposal: { id: `proposal-${index}`, kind: 'add', taskId: `tarefa-${index}`, suggestedRank: 1, reason: 'volume' },
+  }));
+  fs.writeFileSync(
+    path.join(project, 'events.jsonl'),
+    `${events.map((item) => JSON.stringify(item)).join('\n')}\n`,
+  );
+  git(seed, 'add', '.');
+  git(seed, 'commit', '-m', 'volume');
+  git(seed, 'push', 'origin', 'main');
+
+  const listed = runCli(fixture.consumer.dir, ['task', 'list', '--json']);
+  assert.equal(listed.code, 0, listed.err);
+  assert.ok(Buffer.byteLength(listed.out) > 65536, `saída de ${Buffer.byteLength(listed.out)} bytes`);
+  assert.equal(JSON.parse(listed.out).drafts.length, 200);
+  fixture.cleanup();
+});
