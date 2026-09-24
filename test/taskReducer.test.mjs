@@ -6,6 +6,7 @@ import {
   boardView,
   proposalImpact,
   reduceTaskEvents,
+  renderBoardMarkdown,
   taskAgeDays,
 } from '../src/tasks/reducer.mjs';
 
@@ -340,4 +341,80 @@ test('agente do claim vencedor vira implementador; anteriores ficam nos claims',
   );
   assert.deepEqual(board.tasks.a.implementedBy, AGENT_B);
   assert.deepEqual(board.tasks.a.claims.map((claim) => claim.agent), [AGENT_A, AGENT_B]);
+});
+
+const reject = (proposalId, reason = 'fora do escopo') =>
+  event('proposal_rejected', {
+    proposalId,
+    rejectedBy: '@rafaspol',
+    rejectionRef: `thread:reject-${proposalId}`,
+    reason,
+  });
+
+test('recusar inclusão tira o rascunho dos pendentes e o leva ao histórico com motivo', () => {
+  const board = reduceTaskEvents(
+    [draft('a', 1), approve('a'), draft('b', 1), reject('proposal-b', 'duplica a')],
+    { project: 'p' },
+  );
+  const view = boardView(board);
+  assert.deepEqual(board.queue, ['a']);
+  assert.equal(board.tasks.b.status, 'rejected');
+  assert.deepEqual(view.drafts, []);
+  assert.deepEqual(view.pendingProposals, []);
+  assert.equal(view.history[0].id, 'b');
+  assert.equal(view.history[0].rejection.reason, 'duplica a');
+  assert.deepEqual(
+    view.rejectedProposals.map((proposal) => [proposal.id, proposal.rejection.by]),
+    [['proposal-b', '@rafaspol']],
+  );
+  assert.equal(board.proposals['proposal-b'].rejection.ref, 'thread:reject-proposal-b');
+});
+
+test('recusar reordenação deixa a fila como estava; aprovar a mesma proposta a mudaria', () => {
+  const initial = [draft('a', 1), approve('a'), draft('b', 2), approve('b')];
+  const reorder = event('proposal_created', {
+    proposal: { id: 'reorder-b', kind: 'reorder', taskId: 'b', suggestedRank: 1, reason: 'urgente' },
+  });
+  const rejected = reduceTaskEvents([...initial, reorder, reject('reorder-b')], { project: 'p' });
+  assert.deepEqual(rejected.queue, ['a', 'b']);
+  assert.equal(rejected.proposals['reorder-b'].status, 'rejected');
+  assert.deepEqual(boardView(rejected).pendingProposals, []);
+
+  const approved = reduceTaskEvents(
+    [
+      ...initial,
+      reorder,
+      event('proposal_approved', { proposalId: 'reorder-b', approvedBy: '@rafaspol', approvalRef: 'thread:r' }),
+    ],
+    { project: 'p' },
+  );
+  assert.deepEqual(approved.queue, ['b', 'a']);
+});
+
+test('recusa exige motivo e proposta pendente; proposta recusada não é aprovada depois', () => {
+  assert.throws(
+    () => reduceTaskEvents([draft('a', 1), reject('proposal-a', '')], { project: 'p' }),
+    /precisa de motivo/,
+  );
+  assert.throws(
+    () => reduceTaskEvents([draft('a', 1), approve('a'), reject('proposal-a')], { project: 'p' }),
+    /já foi decidida/,
+  );
+  assert.throws(
+    () => reduceTaskEvents([draft('a', 1), reject('proposal-a'), approve('a')], { project: 'p' }),
+    /já foi decidida/,
+  );
+});
+
+test('projeção e quadro Markdown mostram a recusa', () => {
+  const board = reduceTaskEvents([draft('a', 1), reject('proposal-a', 'não vale agora')], {
+    project: 'p',
+  });
+  const projection = boardProjection(board);
+  assert.equal(projection.rejectedProposals[0].rejection.reason, 'não vale agora');
+  assert.equal(projection.history[0].status, 'rejected');
+  assert.match(
+    renderBoardMarkdown(board),
+    /## Recusas\n\n- `proposal-a` · add a recusada em \d{4}-\d{2}-\d{2} por @rafaspol \(thread:reject-proposal-a\): não vale agora/,
+  );
 });

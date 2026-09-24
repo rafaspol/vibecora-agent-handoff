@@ -267,6 +267,49 @@ test('CLI mantém rascunho fora da fila até aprovação referenciada', () => {
   fixture.cleanup();
 });
 
+test('CLI recusa proposta com motivo e referência, e a recusa aparece no task list', () => {
+  const fixture = setup();
+  const proposal = JSON.parse(propose(fixture.consumer, 'task-a', 1).out);
+
+  const noRef = runCli(fixture.consumer.dir, [
+    'task', 'reject', proposal.proposalId, '--reason', 'duplicada',
+  ]);
+  assert.equal(noRef.code, 2);
+  assert.match(noRef.err, /rejection-ref/);
+  const noReason = runCli(fixture.consumer.dir, [
+    'task', 'reject', proposal.proposalId, '--rejection-ref', 'thread:nao',
+  ]);
+  assert.equal(noReason.code, 2);
+  assert.match(noReason.err, /--reason/);
+
+  const rejected = runCli(fixture.consumer.dir, [
+    'task', 'reject', proposal.proposalId,
+    '--rejection-ref', 'thread:rejected-by-rafaspol',
+    '--reason', 'duplica outra tarefa',
+    '--json',
+  ]);
+  assert.equal(rejected.code, 0, rejected.err);
+  assert.equal(JSON.parse(rejected.out).rejection.reason, 'duplica outra tarefa');
+
+  const listed = JSON.parse(runCli(fixture.consumer.dir, ['task', 'list', '--json']).out);
+  assert.deepEqual(listed.drafts, []);
+  assert.deepEqual(listed.pendingProposals, []);
+  assert.equal(listed.history[0].status, 'rejected');
+  assert.deepEqual(listed.rejectedProposals[0].rejection.by, '@rafaspol');
+  const human = runCli(fixture.consumer.dir, ['task', 'list']);
+  assert.match(
+    human.out,
+    /Recusas:\n  proposal-\d+: add task-a recusada em \d{4}-\d{2}-\d{2} por @rafaspol \(thread:rejected-by-rafaspol\): duplica outra tarefa/,
+  );
+
+  const again = runCli(fixture.consumer.dir, [
+    'task', 'approve', proposal.proposalId, '--approval-ref', 'thread:mudou-de-ideia',
+  ]);
+  assert.equal(again.code, 2);
+  assert.match(again.err, /já foi decidida/);
+  fixture.cleanup();
+});
+
 test('task next pula prioridade bloqueada, arma em 20% e não arma em 21%', () => {
   const fixture = setup();
   const taskB = JSON.parse(propose(fixture.consumer, 'task-b', 1).out);

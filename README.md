@@ -100,6 +100,7 @@ com o que comparar e ele fica inerte.
 | `task list` | projeta a fila canônica, bloqueios, histórico e rascunhos | leitura | — | erro |
 | `task propose` | grava proposta; nunca altera a fila aprovada | escrita | ledger | erro |
 | `task approve` | aplica proposta com referência de aprovação | escrita | ledger | conflito |
+| `task reject` | recusa proposta com motivo e referência; nada na fila muda | escrita | ledger | conflito |
 | `task next` | mede recursos, arma se preciso e reivindica a próxima | escrita | ledger | conflito |
 | `task arm` | força checkpoint preventivo da tarefa ativa | escrita | ledger | conflito |
 | `task resume` | mostra retomáveis ou transfere para worktree isolada | leitura/escrita | ledger/worktree | conflito |
