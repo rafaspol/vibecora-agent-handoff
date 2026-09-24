@@ -11,6 +11,26 @@ acontece sozinho.
 npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
 ```
 
+## [0.4.1] — 2026-09-24
+
+Construída sobre a 0.4.0. Não inclui o que a `main` acumulou depois da 0.4.0
+e ainda não foi publicado (candidato recuperável antes de `ready`, integração
+equivalente, isolamento do cache do ledger).
+
+### Adicionado
+
+- `task reject <proposal-id> --reason <motivo> --rejection-ref <ref>`: a recusa
+  de uma proposta, registrada como `proposal_rejected` com autor, referência,
+  motivo e data. A inclusão recusada leva o rascunho ao estado `rejected`, que
+  sai dos rascunhos e entra no histórico; remoção e reordenação recusadas
+  deixam a fila intacta. `task list`, a projeção e o `BOARD.md` ganham a seção
+  de recusas.
+
+### Compatibilidade
+
+- Versões anteriores falham ao ler um ledger com `proposal_rejected` (evento
+  desconhecido). Atualize todos os consumidores antes da primeira recusa.
+
 ## [0.4.0] — não publicada
 
 ### Adicionado
