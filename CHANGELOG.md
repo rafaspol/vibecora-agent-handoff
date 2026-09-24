@@ -11,6 +11,31 @@ acontece sozinho.
 npm i -D github:rafaspol/vibecora-agent-handoff#<tag-ou-commit-revisado>
 ```
 
+## [0.5.0] — 2026-09-24
+
+Construída sobre a 0.4.2, na mesma linha.
+
+### Adicionado
+
+- Proveniência da aprovação. `task approve` passa a gravar quem registrou
+  (`recordedBy`) e a base da aprovação (`approvalBasis`): `document` para
+  `ledger:<caminho>` (conferido no ledger na hora), `delegation` para as
+  referências de `tasks.delegationRefs`, e `conversation` para o resto. O
+  `task list` e o `BOARD.md` marcam as aprovações declaradas. Aprovações
+  antigas são classificadas pelo prefixo e aparecem como anteriores à
+  proveniência.
+- `tasks.delegationRefs` na configuração.
+
+### Alterado
+
+- **Quebra:** aprovação de base `conversation` exige `--approval-summary` (até
+  280 caracteres) com a decisão do condutor. Sem ele, `task approve` falha.
+
+### Compatibilidade
+
+- Versões anteriores leem o ledger com os campos novos sem erro (o reducer
+  antigo ignora campos que não conhece), mas não os mostram.
+
 ## [0.4.2] — 2026-09-24
 
 Construída sobre a 0.4.1, na mesma linha.

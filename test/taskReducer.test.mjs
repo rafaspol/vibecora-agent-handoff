@@ -418,3 +418,37 @@ test('projeção e quadro Markdown mostram a recusa', () => {
     /## Recusas\n\n- `proposal-a` · add a recusada em \d{4}-\d{2}-\d{2} por @rafaspol \(thread:reject-proposal-a\): não vale agora/,
   );
 });
+
+test('o BOARD.md ressalva a aprovação declarada, nova ou antiga, e não a documentada', () => {
+  const board = reduceTaskEvents(
+    [
+      draft('antiga', 1),
+      approve('antiga'),
+      draft('conversa', 2),
+      event('proposal_approved', {
+        proposalId: 'proposal-conversa',
+        approvedBy: '@rafaspol',
+        approvalRef: 'rafaspol:quiz-1',
+        approvalBasis: 'conversation',
+        recordedBy: AGENT_B,
+        approvalSummary: 'Aceito',
+      }),
+      draft('documento', 3),
+      event('proposal_approved', {
+        proposalId: 'proposal-documento',
+        approvedBy: '@rafaspol',
+        approvalRef: 'ledger:approvals/d.md',
+        approvalBasis: 'document',
+        recordedBy: null,
+      }),
+    ],
+    { project: 'p' }
+  );
+  const md = renderBoardMarkdown(board);
+  const linha = (id) => md.split('\n').find((l) => l.includes(`**${id} —`));
+  assert.match(linha('antiga'), /aprovação declarada \(conversa; registro anterior à proveniência\)/);
+  assert.match(linha('conversa'), /aprovação declarada \(conversa; codex:agent-b\)/);
+  assert.doesNotMatch(linha('documento'), /aprovação declarada/);
+  // A projeção do ROADMAP não muda de forma: quem a consome faz digest dela.
+  assert.equal('approval' in boardProjection(board).priorities[0], false);
+});
