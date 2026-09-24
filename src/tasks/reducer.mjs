@@ -1,4 +1,5 @@
 import { validateIntegration } from './integration.mjs';
+import { approvalNote, approvalRecord } from './approvalProvenance.mjs';
 import {
   normalizeAgentIdentity,
   sameAgent,
@@ -64,11 +65,7 @@ function applyApproval(board, proposal, event) {
     throw new Error(`A proposta ${proposal.id} já foi decidida.`);
   }
   proposal.status = 'approved';
-  proposal.approval = {
-    by: event.approvedBy,
-    ref: event.approvalRef,
-    at: event.at,
-  };
+  proposal.approval = approvalRecord(event);
 
   if (proposal.kind === 'add') {
     const task = requireTask(board, proposal.taskId);
@@ -503,8 +500,9 @@ export function renderBoardMarkdown(board) {
           .filter(Boolean)
           .join('; ')}`
       : '';
+    const note = approvalNote(task.approval);
     lines.push(
-      `${task.rank}. **${task.id} — ${task.title}** · ${task.status} · ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${blocked}`,
+      `${task.rank}. **${task.id} — ${task.title}** · ${task.status} · ${originSummary(task)}${task.owner ? ` · atual ${shortAgentRef(task.owner)}` : ''}${note ? ` · ${note}` : ''}${blocked}`,
     );
   }
   lines.push('', '## Rascunhos aguardando aprovação', '');

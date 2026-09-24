@@ -31,6 +31,9 @@ export const DEFAULT_CONFIG = {
     ledger: null,
     branch: 'main',
     conductor: '@rafaspol',
+    // Referências de delegação permanente do condutor. Uma aprovação que cita
+    // uma delas é classificada como `delegation`, e não como conversa.
+    delegationRefs: [],
     thresholdPercent: 20,
     measurementCacheMinutes: 15,
     maxCheckpointBytes: 25 * 1024 * 1024,

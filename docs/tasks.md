@@ -18,9 +18,11 @@ npx vibecora-handoff task propose add \
   --suggested-rank 2 --reason "Falha reproduzida" \
   --agent-type codex --agent-id <instância>
 
-# somente após aprovação explícita do condutor
+# somente após aprovação explícita do condutor; quem registra se identifica
 npx vibecora-handoff task approve <proposal-id> \
-  --approval-ref "codex-thread:<referência-estável>"
+  --approval-ref "codex-thread:<referência-estável>" \
+  --approval-summary "O que o condutor decidiu, em uma frase" \
+  --agent-type codex --agent-id <instância>
 
 # ou a recusa, com o motivo e onde o condutor a decidiu
 npx vibecora-handoff task reject <proposal-id> \
@@ -35,6 +37,26 @@ npx vibecora-handoff task next --agent-type codex --agent-id <instância> \
 `task propose remove` exige `--consequence`. `task propose reorder` exige
 `--suggested-rank`. Nenhuma das duas altera a fila antes de `task approve`.
 Dependências são repetidas com `--depends-on`.
+
+### Proveniência da aprovação
+
+`task approve` grava `approvedBy: <condutor>` e a referência, como sempre, e
+também **quem registrou** (`recordedBy`, a identidade do agente, quando
+informada) e **em que a aprovação se apoia** (`approvalBasis`):
+
+| Base | Referência | Exigência |
+|---|---|---|
+| `document` | `ledger:<caminho no ledger>` | o arquivo existe no ledger na hora do registro |
+| `delegation` | uma referência listada em `tasks.delegationRefs` | — |
+| `conversation` | qualquer outra (conversa, quiz, thread) | `--approval-summary` com a decisão do condutor, até 280 caracteres |
+
+Só `document` é algo que o sucessor abre. As outras duas são **declaradas** por
+quem registrou: o `task list` e o `BOARD.md` dizem isso na linha da tarefa
+(`aprovação declarada (conversa; codex:abc12345)`). Nada disto prova que o
+condutor aprovou; o que muda é que o texto autodeclarado deixa de se passar por
+autenticação. Aprovações anteriores a este registro são classificadas pelo
+prefixo da referência e aparecem como `registro anterior à proveniência`, sem
+reescrever o histórico. A projeção do quadro (`boardProjection`) não muda.
 
 `task reject` é a outra resposta à mesma proposta, e também só registra decisão
 do condutor. Exige `--reason` e `--rejection-ref`; grava `proposal_rejected`
